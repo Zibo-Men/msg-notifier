@@ -191,7 +191,6 @@ class WindowWatcher:
         self.apps = cfg["window_apps"]
         for a in self.apps:
             a["_procs"] = [p.lower() for p in a.get("processes", [])]
-        self.debug_apps = set(cfg.get("debug_apps", []))
         self.tasks: list[tuple[float, object]] = []
         self.titles: dict[int, int] = {}            # hwnd -> 标题里的未读数
         self.tray_names: dict[str, str] = {}        # tray key -> 最近名称
@@ -202,6 +201,11 @@ class WindowWatcher:
         self._tray_tick = 0
 
     # ---- 工具
+    @property
+    def debug_apps(self) -> set[str]:
+        """每次现读 cfg，hub 下发的新设置立即生效。"""
+        return set(self.cfg.get("debug_apps", []))
+
     def app_of(self, hwnd) -> dict | None:
         p = proc_name(hwnd).lower()
         for a in self.apps:

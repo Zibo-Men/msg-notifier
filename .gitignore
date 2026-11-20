@@ -6,3 +6,5 @@ __pycache__/
 probe_output.txt
 probe_shots/
 debug_shots/
+.env
+data/

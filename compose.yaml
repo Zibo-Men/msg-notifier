@@ -1,0 +1,30 @@
+# N150 上的 hub：接收工作电脑的通知和日志，推送到 Bark。
+# 工作电脑上的 notify_agent.py 不用 Docker，直接用 Python 跑。
+services:
+  hub:
+    build: ./hub
+    image: msg-notifier-hub:local
+    container_name: msg-notifier-hub
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      TZ: ${TZ:-America/Los_Angeles}
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${HUB_PORT:-8101}:8000"
+    volumes:
+      - ./data:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

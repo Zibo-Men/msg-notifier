@@ -20,6 +20,7 @@ import logging.handlers
 import os
 import queue
 import shutil
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -36,6 +37,12 @@ DEFAULT_DB = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft/Windows/Notif
 CONFIG_PATH = HERE / "config.json"
 
 DEFAULT_CONFIG = {
+    # N150 上的 hub：设置后推送和日志都交给 hub，Bark 配置也在 hub 上；留空则直接推 Bark
+    "hub_url": "",                   # 例如 http://192.168.0.119:8101
+    "hub_token": "",
+    "hub_config_interval": 60,       # 每隔多少秒从 hub 拉取一次运行参数（idle_seconds、debug_apps 等）
+    "host_name": socket.gethostname(),
+    # 以下 bark_* 只在不用 hub、或 hub 连不上时作为直推备用
     "bark_server": "https://api.day.app",
     "bark_key": "",
     "bark_level": "timeSensitive",   # active / timeSensitive / critical
@@ -228,6 +235,93 @@ def bark_push(cfg: dict, title: str, body: str, group: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------- hub（N150）
+def hub_request(cfg: dict, method: str, path: str, payload=None, timeout: float = 10):
+    req = urllib.request.Request(
+        cfg["hub_url"].rstrip("/") + path,
+        data=None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=utf-8",
+                 "Authorization": f"Bearer {cfg['hub_token']}"},
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"null")
+
+
+def deliver(cfg: dict, app: str, title: str, body: str, source: str, generic: bool) -> bool:
+    """把一条消息送出去：优先交给 hub；没配 hub 或 hub 连不上时，若本地有 bark_key 就直推。"""
+    if cfg["hub_url"]:
+        payload = {"app": app, "title": title, "body": body, "source": source,
+                   "generic": generic, "host": cfg["host_name"]}
+        for attempt in range(3):
+            try:
+                res = hub_request(cfg, "POST", "/api/notify", payload)
+                status = (res or {}).get("status")
+                if status == "error":
+                    log.error("hub 推送 Bark 失败: %s", res.get("detail"))
+                elif status == "muted":
+                    log.info("hub 已静音: %s", res.get("detail"))
+                return status in ("pushed", "muted")
+            except Exception as e:  # noqa: BLE001
+                log.warning("连接 hub 失败（第 %d 次）: %s", attempt + 1, e)
+                time.sleep(2 * (attempt + 1))
+        if not cfg["bark_key"]:
+            return False
+        log.warning("hub 不可用，改为直接推送 Bark")
+    push_title = f"{app}: {title}" if title else app
+    push_body = body if (cfg["show_body"] or generic) else "有新消息"
+    return bark_push(cfg, push_title, push_body or " ", app)
+
+
+class HubLogHandler(logging.Handler):
+    """把日志批量上传到 hub；hub 连不上时先缓存（最多 5000 行），恢复后补传。"""
+
+    def __init__(self, cfg: dict) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.cfg = cfg
+        self.buf: list[dict] = []
+        self._buf_lock = threading.Lock()
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            line = {"ts": record.created, "level": record.levelname, "msg": self.format(record)}
+            with self._buf_lock:
+                self.buf.append(line)
+                if len(self.buf) > 5000:
+                    del self.buf[: len(self.buf) - 5000]
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _loop(self) -> None:
+        while True:
+            time.sleep(3)
+            with self._buf_lock:
+                batch = self.buf[:500]
+            if not batch:
+                continue
+            try:
+                hub_request(self.cfg, "POST", "/api/logs", {"host": self.cfg["host_name"], "lines": batch})
+                with self._buf_lock:
+                    del self.buf[: len(batch)]
+            except Exception:  # noqa: BLE001
+                time.sleep(30)  # hub 不可用，稍后再试；不要在这里打日志，避免循环
+
+
+def hub_config_loop(cfg: dict) -> None:
+    """定期从 hub 拉取运行参数，原地更新 cfg（各模块读的是同一个 dict）。"""
+    while True:
+        try:
+            remote = hub_request(cfg, "GET", "/api/agent-config") or {}
+            changed = {k: v for k, v in remote.items() if cfg.get(k) != v}
+            if changed:
+                cfg.update(changed)
+                log.info("从 hub 更新参数: %s", json.dumps(changed, ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001
+            log.debug("拉取 hub 参数失败: %s", e)
+        time.sleep(max(10, cfg["hub_config_interval"]))
+
+
 class Notifier:
     """所有检测通道都调用 submit()：统一做空闲判断、去重、限流，再异步推送。
 
@@ -235,7 +329,7 @@ class Notifier:
     或者兜底推送过于频繁，就不推。
     """
 
-    def __init__(self, cfg: dict, push=bark_push) -> None:
+    def __init__(self, cfg: dict, push=deliver) -> None:
         self.cfg = cfg
         self.push = push
         self.lock = threading.Lock()
@@ -251,9 +345,13 @@ class Notifier:
 
     def _worker(self) -> None:
         while True:
-            title, body, group = self.q.get()
-            ok = self.push(self.cfg, title, body, group)
-            log.info("推送%s: %s | %s", "成功" if ok else "失败", title, body.replace("\n", " / ")[:80])
+            app, title, body, source, generic = self.q.get()
+            try:
+                ok = self.push(self.cfg, app, title, body, source, generic)
+            except Exception as e:  # noqa: BLE001
+                log.exception("推送出错: %s", e)
+                ok = False
+            log.info("推送%s [%s] %s | %s", "成功" if ok else "失败", app, title, body.replace("\n", " / ")[:80])
 
     def submit(self, app: str, title: str, body: str, source: str, generic: bool = False,
                now: float | None = None, idle: float | None = None) -> bool:
@@ -293,10 +391,8 @@ class Notifier:
                 self._recent[(app, title, body)] = now
                 if len(self._recent) > 500:
                     self._recent = {k: v for k, v in self._recent.items() if now - v < 120}
-        push_title = f"{app}: {title}" if title else app
-        push_body = body if (cfg["show_body"] or generic) else "有新消息"
         log.info("提交推送 [%s/%s] %s", app, source, title or body)
-        self.q.put((push_title, push_body or " ", app))
+        self.q.put((app, title, body, source, generic))
         return True
 
 
@@ -366,7 +462,14 @@ def db_loop(cfg: dict, db: NotificationDB, notifier: Notifier) -> None:
 
 def run(cfg: dict, db: NotificationDB) -> None:
     notifier = Notifier(cfg)
-    log.info("启动：idle_seconds=%s，window_watch=%s", cfg["idle_seconds"], cfg["window_watch"])
+    if cfg["hub_url"]:
+        try:
+            cfg.update(hub_request(cfg, "GET", "/api/agent-config") or {})
+        except Exception as e:  # noqa: BLE001
+            log.warning("启动时连不上 hub（%s），先用本地参数", e)
+        threading.Thread(target=hub_config_loop, args=(cfg,), daemon=True).start()
+    log.info("启动：hub=%s，idle_seconds=%s，debug_apps=%s，window_watch=%s",
+             cfg["hub_url"] or "无（直推 Bark）", cfg["idle_seconds"], cfg["debug_apps"], cfg["window_watch"])
     if db.path.exists():
         threading.Thread(target=db_loop, args=(cfg, db, notifier), daemon=True).start()
     else:
@@ -391,14 +494,26 @@ def main() -> None:
 
     if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    setup_logging(args.debug)
     cfg = load_config()
+    setup_logging(args.debug)
     db = NotificationDB(args.db)
 
     if args.test:
-        ok = bark_push(cfg, "msg-notifier 测试", "如果你在 iPhone 上看到这条，说明 Bark 配置正确", "test")
+        if cfg["hub_url"]:
+            try:
+                ok = deliver(cfg, "测试", f"来自 {cfg['host_name']}", "看到这条说明 工作电脑 → N150 → Bark 链路正常",
+                             "test", False)
+            except Exception as e:  # noqa: BLE001
+                log.error("测试失败: %s", e)
+                ok = False
+        else:
+            ok = bark_push(cfg, "msg-notifier 测试", "如果你在 iPhone 上看到这条，说明 Bark 配置正确", "test")
         print("推送成功" if ok else "推送失败，看上面的日志")
         return
+    if cfg["hub_url"] and not args.diagnose:
+        h = HubLogHandler(cfg)
+        h.setFormatter(logging.Formatter("%(message)s"))
+        log.addHandler(h)
     if args.diagnose:
         if not args.db.exists():
             sys.exit(f"找不到通知数据库: {args.db}")

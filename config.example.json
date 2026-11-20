@@ -1,11 +1,5 @@
 {
-  "bark_server": "https://api.day.app",
-  "bark_key": "在 iPhone 的 Bark App 里复制",
-  "bark_level": "timeSensitive",
-  "bark_call": false,
-  "bark_sound": "",
-  "show_body": true,
-  "idle_seconds": 300,
-  "debug_apps": ["飞书"],
-  "ignore_keywords": []
+  "hub_url": "http://192.168.0.119:8101",
+  "hub_token": "填 N150 上 msg-notifier/.env 里的 HUB_TOKEN",
+  "bark_key": ""
 }
