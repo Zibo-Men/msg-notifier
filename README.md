@@ -47,6 +47,14 @@ python probe.py              # 默认监测 120 秒，可加 --seconds 300
 
 运行期间让别人给你发几条飞书、Teams 消息，中途把飞书/Teams 窗口最小化一次、切到别的窗口一次。结束后把 `probe_output.txt`（以及需要的话 `probe_shots/` 里的截图）发回来分析。
 
+probe 会在飞书/Teams 弹出提示窗口时截图，并调用 `ocr.ps1`（Windows 自带 OCR，无需安装）识别文字。识别中文需要中文 OCR 语言包，开头的 `已安装的 OCR 语言` 里没有 `zh-Hans-CN` 的话，用管理员 PowerShell 安装：
+
+```powershell
+Add-WindowsCapability -Online -Name "Language.OCR~~~zh-CN~0.0.1.0"
+```
+
+没有管理员权限的话，可以在 设置 → 时间和语言 → 语言和区域 里添加"中文(简体)"（只装基本功能即可，不用改显示语言）。
+
 提示：把飞书、Teams 的托盘图标设为常显（设置 → 个性化 → 任务栏 → 其他系统托盘图标），否则藏在 `^` 里的图标看不到。
 
 ## 配置项（config.json）

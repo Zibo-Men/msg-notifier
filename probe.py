@@ -6,7 +6,10 @@
 记录内容：
   [FLASH]   任务栏按钮闪烁（FlashWindowEx），所有进程
   [REDRAW]  目标进程的任务栏按钮重绘（标题/图标变化）
-  [SHOW]    目标进程新出现的顶层窗口（自绘弹窗通常在这里）+ 窗口里能读到的文字
+  [SHOW]    目标进程新出现的顶层窗口（自绘弹窗通常在这里）
+  [TEXT]    弹窗出现后 0.5/1.5/3 秒各用 UI Automation 读一次窗口文字
+  [SHOT]    小窗口（弹窗）截图，存到 probe_shots/
+  [OCR]     用 Windows 自带 OCR（ocr.ps1）识别弹窗截图
   [TITLE]   目标进程顶层窗口标题变化
   [TASKBAR] 任务栏/托盘里按钮名称（含提示文字）的变化
   [ICON]    目标应用任务栏按钮/托盘图标的像素变化（保存截图到 probe_shots/）
@@ -24,7 +27,9 @@ import argparse
 import ctypes
 import ctypes.wintypes as wt
 import hashlib
+import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +40,9 @@ if sys.platform != "win32":
 HERE = Path(__file__).resolve().parent
 OUT = open(HERE / "probe_output.txt", "w", encoding="utf-8")
 SHOTS = HERE / "probe_shots"
-TARGETS = ("feishu", "lark", "ms-teams", "teams", "飞书")
+TARGETS = ("feishu", "lark", "chintoa", "ms-teams", "teams", "飞书")
+OCR_PS1 = HERE / "ocr.ps1"
+_out_lock = threading.Lock()
 
 # 必须在截图/UIA 之前设置，否则坐标会被 DPI 缩放
 try:
@@ -46,9 +53,10 @@ except Exception:
 
 def out(tag: str, msg: str) -> None:
     line = f"{datetime.now():%H:%M:%S.%f}"[:-3] + f" [{tag}] {msg}"
-    print(line, flush=True)
-    OUT.write(line + "\n")
-    OUT.flush()
+    with _out_lock:
+        print(line, flush=True)
+        OUT.write(line + "\n")
+        OUT.flush()
 
 
 try:
@@ -105,6 +113,7 @@ user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
 user32.IsWindowVisible.argtypes = [wt.HWND]
 user32.FindWindowW.argtypes = [wt.LPCWSTR, wt.LPCWSTR]
 user32.FindWindowW.restype = wt.HWND
+user32.IsWindow.argtypes = [wt.HWND]
 kernel32.GetModuleHandleW.argtypes = [wt.LPCWSTR]
 kernel32.GetModuleHandleW.restype = wt.HMODULE
 kernel32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
@@ -154,10 +163,15 @@ def win_class(hwnd) -> str:
     return buf.value
 
 
-def win_rect(hwnd) -> str:
+def rect_of(hwnd) -> tuple[int, int, int, int]:
     r = wt.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(r))
-    return f"({r.left},{r.top}) {r.right - r.left}x{r.bottom - r.top}"
+    return r.left, r.top, r.right, r.bottom
+
+
+def win_rect(hwnd) -> str:
+    l, t, r, b = rect_of(hwnd)
+    return f"({l},{t}) {r - l}x{b - t}"
 
 
 def is_target(name: str) -> bool:
@@ -170,8 +184,84 @@ def describe(hwnd) -> str:
 
 
 # ---------------------------------------------------------------- 事件处理
-pending_dumps: list[int] = []
+scheduled: list[tuple[float, object]] = []   # (到期时间, 回调)，由 200ms 定时器执行
 last_titles: dict[int, str] = {}
+popup_seq = {"n": 0}
+
+
+def schedule(delay: float, fn) -> None:
+    scheduled.append((time.time() + delay, fn))
+
+
+def run_due() -> None:
+    now = time.time()
+    due = [x for x in scheduled if x[0] <= now]
+    for x in due:
+        scheduled.remove(x)
+        try:
+            x[1]()
+        except Exception as e:  # noqa: BLE001
+            out("ERR", f"scheduled: {e}")
+
+
+def on_popup(hwnd) -> None:
+    """目标进程出现新顶层窗口：安排多次 UIA 读取；小窗口额外截图 + OCR。"""
+    popup_seq["n"] += 1
+    seq = popup_seq["n"]
+    for d in (0.5, 1.5, 3.0):
+        schedule(d, lambda d=d: dump_window_text(hwnd, f"+{d}s"))
+    l, t, r, b = rect_of(hwnd)
+    if 0 < r - l <= 900 and 0 < b - t <= 700:
+        schedule(0.8, lambda: shot_and_ocr(hwnd, seq, "a"))
+        schedule(2.0, lambda: shot_and_ocr(hwnd, seq, "b", ocr=False))
+
+
+def shot_and_ocr(hwnd, seq: int, suffix: str, ocr: bool = True) -> None:
+    if ImageGrab is None or not user32.IsWindow(hwnd) or not user32.IsWindowVisible(hwnd):
+        out("SHOT", f"#{seq}{suffix} hwnd={hwnd:#x} 已不可见，跳过截图")
+        return
+    img = ImageGrab.grab(bbox=rect_of(hwnd), all_screens=True)
+    SHOTS.mkdir(exist_ok=True)
+    fn = SHOTS / f"popup{seq:02d}{suffix}_{proc_name(hwnd).split('.')[0]}_{datetime.now():%H%M%S}.png"
+    img.save(fn)
+    out("SHOT", f"#{seq}{suffix} {img.width}x{img.height} 已存 {fn.name}")
+    if ocr:
+        # 放大 2 倍再识别，小字准确率更高
+        big = img.resize((img.width * 2, img.height * 2))
+        big_fn = fn.with_name(fn.stem + "_x2.png")
+        big.save(big_fn)
+        threading.Thread(target=run_ocr, args=(big_fn, f"#{seq}{suffix}"), daemon=True).start()
+
+
+def run_ocr(path: Path, label: str) -> None:
+    if not OCR_PS1.exists():
+        out("OCR", "找不到 ocr.ps1")
+        return
+    t0 = time.time()
+    try:
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(OCR_PS1), "-Path", str(path)],
+            capture_output=True, timeout=60, encoding="utf-8", errors="replace",
+            creationflags=0x08000000,  # CREATE_NO_WINDOW
+        )
+    except Exception as e:  # noqa: BLE001
+        out("OCR", f"{label} 运行失败: {e}")
+        return
+    text = (r.stdout or "").strip().replace("\r", "")
+    err = (r.stderr or "").strip()
+    out("OCR", f"{label} 用时 {time.time() - t0:.1f}s\n" + (text or "(无输出)") + (f"\nSTDERR: {err[:500]}" if err else ""))
+
+
+def ocr_languages() -> None:
+    try:
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(OCR_PS1), "-ListLanguages"],
+            capture_output=True, timeout=60, encoding="utf-8", errors="replace", creationflags=0x08000000,
+        )
+        langs = ", ".join(r.stdout.split()) or "(无)"
+        out("INFO", f"已安装的 OCR 语言: {langs}" + (f"  STDERR: {r.stderr.strip()[:300]}" if r.stderr.strip() else ""))
+    except Exception as e:  # noqa: BLE001
+        out("INFO", f"查询 OCR 语言失败: {e}")
 
 
 def on_shell(code: int, hwnd) -> None:
@@ -197,7 +287,7 @@ def win_event(hook, event, hwnd, id_obj, id_child, thread, ts):  # noqa: ARG001
             return
         if event == EVENT_OBJECT_SHOW:
             out("SHOW", describe(hwnd))
-            pending_dumps.append(hwnd)
+            on_popup(hwnd)
         elif event == EVENT_OBJECT_NAMECHANGE:
             t = win_text(hwnd)
             if last_titles.get(hwnd) != t:
@@ -208,21 +298,35 @@ def win_event(hook, event, hwnd, id_obj, id_child, thread, ts):  # noqa: ARG001
 
 
 # ---------------------------------------------------------------- UIA：窗口文字、任务栏
-def dump_window_text(hwnd) -> None:
+def dump_window_text(hwnd, label: str = "") -> None:
     if auto is None:
         return
+    if not user32.IsWindow(hwnd):
+        out("TEXT", f"{label} hwnd={hwnd:#x} 窗口已销毁")
+        return
+    t0 = time.time()
     try:
         ctrl = auto.ControlFromHandle(hwnd)
-        texts = []
-        for c, _depth in auto.WalkControl(ctrl, maxDepth=10):
-            n = (c.Name or "").strip()
-            if n and n not in texts:
-                texts.append(n)
-            if len(texts) >= 30:
+        texts, seen, nodes = [], set(), 0
+        for c, depth in auto.WalkControl(ctrl, maxDepth=30):
+            nodes += 1
+            vals = [(c.Name or "").strip()]
+            try:  # 有些文本只在 Value 里
+                vp = c.GetPattern(auto.PatternId.ValuePattern)
+                if vp:
+                    vals.append((vp.Value or "").strip())
+            except Exception:  # noqa: BLE001
+                pass
+            for v in vals:
+                if v and v not in seen:
+                    seen.add(v)
+                    texts.append(f"{c.ControlTypeName.replace('Control', '')}@{depth}:{v[:80]}")
+            if len(texts) >= 60 or nodes >= 800:
                 break
-        out("TEXT", f"hwnd={hwnd:#x} UIA 读到 {len(texts)} 段: " + " | ".join(t[:60] for t in texts))
+        out("TEXT", f"{label} hwnd={hwnd:#x} 节点 {nodes} 个、文字 {len(texts)} 段、用时 {time.time() - t0:.1f}s: "
+            + " | ".join(texts))
     except Exception as e:  # noqa: BLE001
-        out("TEXT", f"hwnd={hwnd:#x} UIA 读取失败: {e}")
+        out("TEXT", f"{label} hwnd={hwnd:#x} UIA 读取失败: {e}")
 
 
 taskbar_prev: dict[str, tuple] = {}
@@ -344,10 +448,11 @@ def main() -> None:
             if msg == shell_msg:
                 on_shell(wparam & 0xFFFFFFFF, lparam)
                 return 0
+            if msg == WM_TIMER and wparam == 2:
+                run_due()
+                return 0
             if msg == WM_TIMER:
                 tick["n"] += 1
-                while pending_dumps:
-                    dump_window_text(pending_dumps.pop(0))
                 scan_db(False)
                 scan_taskbar(False)
                 left = args.seconds - (time.time() - start)
@@ -356,6 +461,10 @@ def main() -> None:
                 if left <= 0:
                     user32.PostQuitMessage(0)
                 return 0
+        except KeyboardInterrupt:
+            out("INFO", "收到 Ctrl+C，提前结束")
+            user32.PostQuitMessage(0)
+            return 0
         except Exception as e:  # noqa: BLE001
             out("ERR", f"wndproc: {e}")
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -380,10 +489,12 @@ def main() -> None:
         out("ERR", "SetWinEventHook 失败")
 
     out("INFO", f"Python {sys.version.split()[0]}，uiautomation={'有' if auto else '无'}，pillow={'有' if ImageGrab else '无'}")
+    ocr_languages()
     scan_db(True)
     scan_taskbar(True)
     out("INFO", f"开始监测 {args.seconds} 秒，现在请让别人给你发飞书、Teams 消息……")
     user32.SetTimer(hwnd, 1, 2000, None)
+    user32.SetTimer(hwnd, 2, 200, None)
 
     msg = wt.MSG()
     while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
