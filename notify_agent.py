@@ -67,7 +67,8 @@ DEFAULT_CONFIG = {
     "window_apps": [
         {"name": "Teams", "processes": ["ms-teams.exe"], "tray_keywords": ["Microsoft Teams"],
          "parser": "teams", "popup_min": [300, 100], "popup_max": [700, 450],
-         "tray_icon_signal": False},  # Teams 有弹窗和闪烁，托盘图标变化（含读完消息）只会误报
+         # Teams 靠弹窗内容 + 任务栏闪烁；托盘图标/提示会随“离开”状态、读完消息而变，只记日志不推送
+         "tray_signals": False},
         {"name": "飞书", "processes": ["lark.exe", "feishu.exe"], "tray_keywords": ["ChintOA", "飞书", "Feishu", "Lark"],
          "parser": "generic", "popup_min": [150, 50], "popup_max": [800, 600]},
     ],

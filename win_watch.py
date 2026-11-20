@@ -382,7 +382,7 @@ class WindowWatcher:
             self.tray_names[key] = name
             if prev is not None and name != prev:
                 log.info("托盘提示变化 [%s]: %r -> %r", key, prev, name)
-                if name != self.tray_base[key]:
+                if name != self.tray_base[key] and app.get("tray_signals", True):
                     self.generic(app, "tray-name")
             # 图标像素变化（闪烁）：只在“安静一段时间后开始变化”时算一次信号
             if ImageGrab is None or rect[2] <= rect[0] or rect[3] <= rect[1]:
@@ -399,8 +399,8 @@ class WindowWatcher:
                 quiet = now - self.tray_changed_at.get(key, 0)
                 self.tray_changed_at[key] = now
                 self.dbg(app, f"托盘图标变化 hash {old} -> {h}（距上次变化 {quiet:.0f}s，初始 {base}）")
-                # 变回初始样子 = 未读被清掉，不算新消息；Teams 等有弹窗的应用可关闭此信号
-                if quiet > 20 and h != base and app.get("tray_icon_signal", True):
+                # 变回初始样子 = 未读被清掉，不算新消息；Teams 等有弹窗的应用关闭了托盘信号
+                if quiet > 20 and h != base and app.get("tray_signals", True):
                     self.generic(app, "tray-icon")
 
     # ---- 消息循环
