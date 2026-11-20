@@ -42,3 +42,25 @@ UNREAD_RE = re.compile(r"[\(（\[](\d+)[\)）\]]")
 def unread_in_title(title: str) -> int:
     m = UNREAD_RE.search(title or "")
     return int(m.group(1)) if m else 0
+
+
+def parse_teams_items(items: list[tuple[str, str, int]]) -> tuple[str, str] | None:
+    """Teams 弹窗：items 为 [(控件类型, 文字, 深度)]。
+
+    实测结构（2026-11）：Text@16 是“消息+标签+发送人”拼起来的汇总；Group@17 是
+    “External unfamiliar”之类的标签组，里面 Text@18 是标签；Text@17 依次是发送人、消息。
+    规则：去掉汇总文字后，取深度最浅的那一层 Text：第一段是发送人，其余是消息。
+    """
+    texts = [(n.strip(), d) for t, n, d in items if t == "Text" and n and n.strip()]
+    names = [n for n, _ in texts]
+    leaf = [(n, d) for n, d in texts if sum(1 for o in names if o != n and o in n) < 2]
+    if not leaf:
+        return None
+    top = min(d for _, d in leaf)
+    layer = []
+    for n, d in leaf:
+        if d == top and n not in layer:
+            layer.append(n)
+    if len(layer) < 2:
+        return None
+    return layer[0], "\n".join(layer[1:])

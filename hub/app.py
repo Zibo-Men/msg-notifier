@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -26,8 +28,9 @@ from contextlib import closing
 from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 DATA = Path(os.getenv("DATA_DIR", "/data"))
@@ -199,11 +202,34 @@ def bark_push(title: str, body: str, group: str, bark: dict) -> tuple[bool, str]
 app = FastAPI(title="msg-notifier hub")
 
 
-def auth(authorization: str = Header(default="")) -> None:
+SESSION_COOKIE = "hub_session"
+SESSION_MAX_AGE = 10 * 365 * 86400  # 10 年：登录一次长期有效
+
+
+def same(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+def session_value() -> str:
+    """Cookie 里存的是由令牌派生的值，不是令牌本身。改 HUB_TOKEN 会让所有登录失效。"""
+    return hmac.new(HUB_TOKEN.encode(), b"msg-notifier-session", hashlib.sha256).hexdigest()
+
+
+def set_session(response: Response) -> None:
+    response.set_cookie(SESSION_COOKIE, session_value(), max_age=SESSION_MAX_AGE,
+                        httponly=True, samesite="strict", path="/")
+
+
+def auth(response: Response, authorization: str = Header(default=""), hub_session: str = Cookie(default="")) -> None:
+    """工作电脑用 Authorization: Bearer <令牌>；管理页面用登录后的长期 Cookie（每次使用自动续期）。"""
     if not HUB_TOKEN:
         raise HTTPException(500, "HUB_TOKEN 未配置")
-    if authorization != f"Bearer {HUB_TOKEN}":
-        raise HTTPException(401, "bad token")
+    if same(authorization, f"Bearer {HUB_TOKEN}"):
+        return
+    if hub_session and same(hub_session, session_value()):
+        set_session(response)  # 续期：浏览器可能把有效期截短（Chrome 最长 400 天）
+        return
+    raise HTTPException(401, "bad token")
 
 
 class Notify(BaseModel):
@@ -230,6 +256,10 @@ class TestReq(BaseModel):
     app: str = ""
 
 
+class LoginReq(BaseModel):
+    token: str
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
@@ -240,6 +270,31 @@ def _startup() -> None:
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest() -> FileResponse:
+    return FileResponse(STATIC / "manifest.webmanifest", media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
+
+
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.post("/api/login")
+def login(req: LoginReq, response: Response) -> dict:
+    if not HUB_TOKEN or not same(req.token.strip(), HUB_TOKEN):
+        time.sleep(1)  # 减缓暴力尝试
+        raise HTTPException(401, "bad token")
+    set_session(response)
+    return {"ok": True}
+
+
+@app.post("/api/logout")
+def logout() -> JSONResponse:
+    r = JSONResponse({"ok": True})
+    r.delete_cookie(SESSION_COOKIE, path="/")
+    return r
 
 
 @app.get("/healthz")

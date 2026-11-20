@@ -2,218 +2,295 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>消息推送控制台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>消息推送</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="消息推送">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-32.png">
+<link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
-  --bg: #f5f6f8; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
-  --accent: #2563eb; --accent-soft: #e8efff; --ok: #15803d; --ok-soft: #e7f6ec;
-  --warn: #b45309; --warn-soft: #fdf3e2; --err: #b91c1c; --err-soft: #fdecec;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bg: #f2f2f7; --card: #ffffff; --text: #000000; --muted: #8a8a8e; --line: rgba(60,60,67,.18);
+  --fill: rgba(118,118,128,.12); --accent: #007aff; --ok: #34c759; --warn: #ff9500; --err: #ff3b30;
+  --ok-soft: rgba(52,199,89,.15); --err-soft: rgba(255,59,48,.13); --warn-soft: rgba(255,149,0,.15);
+  --bar: rgba(249,249,249,.88); --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
+  --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px);
+  color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111317; --card: #1a1d23; --text: #e6e8eb; --muted: #9aa1ab; --line: #2a2e36;
-    --accent: #6b9bff; --accent-soft: #1f2a44; --ok: #4ade80; --ok-soft: #173023;
-    --warn: #fbbf24; --warn-soft: #3a2e14; --err: #f87171; --err-soft: #3b1a1a;
+    --bg: #000000; --card: #1c1c1e; --text: #ffffff; --muted: #8d8d93; --line: rgba(84,84,88,.6);
+    --fill: rgba(118,118,128,.24); --accent: #0a84ff; --ok: #30d158; --warn: #ff9f0a; --err: #ff453a;
+    --ok-soft: rgba(48,209,88,.18); --err-soft: rgba(255,69,58,.18); --warn-soft: rgba(255,159,10,.18);
+    --bar: rgba(22,22,24,.88);
   }
 }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-.wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
-h1 { font-size: 20px; margin: 0; flex: 1 1 auto; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { padding: 2px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line);
-  color: var(--muted); font-size: 12px; white-space: nowrap; }
-.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
-.chip.bad { color: var(--err); background: var(--err-soft); border-color: transparent; }
-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
-nav button { border: 0; background: none; color: var(--muted); padding: 8px 14px; font-size: 14px;
-  cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
-nav button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
-.card h2 { font-size: 15px; margin: 0 0 4px; }
-.hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0;
-  border-top: 1px solid var(--line); flex-wrap: wrap; }
-.row:first-of-type { border-top: 0; }
-.row .label { flex: 1 1 180px; min-width: 0; }
-.row .label small { display: block; color: var(--muted); font-size: 12px; }
-.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-select, input[type=text], input[type=password], input[type=number] {
-  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-  border-radius: 6px; padding: 5px 8px; max-width: 100%; }
-button.btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
-  border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.btn:disabled { opacity: .5; cursor: default; }
-.switch { position: relative; width: 42px; height: 24px; flex: none; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 24px; transition: .15s; cursor: pointer; }
-.switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px;
-  background: #fff; border-radius: 50%; transition: .15s; }
-.switch input:checked + span { background: var(--accent); }
-.switch input:checked + span::before { transform: translateX(18px); }
-.big { display: flex; align-items: center; gap: 14px; }
-.big strong { font-size: 16px; }
-.apps .app { display: grid; grid-template-columns: minmax(80px, 1fr) auto; gap: 8px 12px; align-items: center;
-  padding: 10px 0; border-top: 1px solid var(--line); }
-.apps .app:first-child { border-top: 0; }
-.apps .name { font-weight: 600; display: flex; align-items: center; gap: 10px; }
-.apps .controls { justify-content: flex-end; }
-.apps .controls label { color: var(--muted); font-size: 12px; }
-.pair { display: inline-flex; align-items: center; gap: 6px; }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
-td.time { white-space: nowrap; color: var(--muted); font-size: 12px; }
-td .body { color: var(--muted); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
-.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
-.badge.pushed { color: var(--ok); background: var(--ok-soft); }
-.badge.muted { color: var(--muted); background: var(--bg); }
-.badge.error { color: var(--err); background: var(--err-soft); }
-.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-.filters input[type=text] { flex: 1 1 160px; }
-.logs { font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 8px; padding: 8px;
-  max-height: 65vh; overflow: auto; }
-.log { display: grid; grid-template-columns: auto auto 1fr; gap: 0 8px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
-.log .t { color: var(--muted); white-space: nowrap; }
-.log .lv { font-weight: 600; }
-.log .lv.WARNING { color: var(--warn); } .log .lv.ERROR, .log .lv.CRITICAL { color: var(--err); }
-.log .lv.DEBUG { color: var(--muted); }
-.log .m { white-space: pre-wrap; word-break: break-word; }
-.log.dbg .m { color: var(--accent); }
-.more { text-align: center; margin-top: 10px; }
-.empty { color: var(--muted); text-align: center; padding: 24px 0; }
-.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
-  padding: 8px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 9; }
-.toast.show { opacity: .92; }
-.login { max-width: 420px; margin: 12vh auto; }
-.login input { width: 100%; margin: 8px 0 12px; }
-code { font-family: var(--mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: var(--bg); }
+body { margin: 0; background: var(--bg); color: var(--text); touch-action: manipulation;
+  font: 17px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+button, select, input { font: inherit; color: inherit; }
 .hidden { display: none !important; }
-@media (max-width: 640px) {
-  .apps .app { grid-template-columns: 1fr; }
-  .apps .controls { justify-content: flex-start; }
-  .hide-sm { display: none; }
-  .log { grid-template-columns: auto 1fr; } .log .h { display: none; }
-}
+
+/* ---------- 顶栏 ---------- */
+.top { position: sticky; top: 0; z-index: 5; background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  padding: calc(var(--st) + 6px) calc(16px + var(--sr)) 8px calc(16px + var(--sl));
+  border-bottom: .5px solid transparent; transition: border-color .2s; }
+.top.scrolled { border-bottom-color: var(--line); }
+.top-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; max-width: 640px; margin: 0 auto; }
+.top h1 { font-size: 32px; font-weight: 700; letter-spacing: .3px; margin: 0; }
+.icon-btn { border: 0; background: var(--fill); width: 34px; height: 34px; border-radius: 50%; display: grid;
+  place-items: center; color: var(--accent); flex: none; margin-bottom: 4px; }
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status { display: flex; gap: 6px; flex-wrap: wrap; max-width: 640px; margin: 8px auto 0; }
+.pill { font-size: 13px; padding: 3px 10px; border-radius: 999px; background: var(--fill); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.bad { background: var(--err-soft); color: var(--err); }
+.pill i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; vertical-align: 1px; }
+
+/* ---------- 内容 ---------- */
+main { max-width: 640px; margin: 0 auto;
+  padding: 8px calc(16px + var(--sr)) calc(96px + var(--sb)) calc(16px + var(--sl)); }
+.sec-title { font-size: 13px; color: var(--muted); text-transform: uppercase; margin: 22px 16px 7px; }
+.sec-foot { font-size: 13px; color: var(--muted); margin: 7px 16px 0; line-height: 1.4; }
+.group { background: var(--card); border-radius: 12px; overflow: hidden; }
+.cell { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; position: relative; }
+.cell + .cell::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--line); }
+.cell .t { flex: 1 1 auto; min-width: 0; }
+.cell .t small { display: block; font-size: 13px; color: var(--muted); margin-top: 1px; }
+.cell .v { color: var(--muted); flex: none; }
+.cell.big { min-height: 64px; }
+.cell.big .t { font-size: 19px; font-weight: 600; }
+.app-ico { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: #fff;
+  font-size: 15px; font-weight: 700; flex: none; }
+.cell.sub { padding-left: 58px; min-height: 44px; }
+.cell.sub::before { left: 58px !important; }
+/* iOS 风格的下拉：显示为右侧灰字 + 箭头，整行可点 */
+.pick { position: relative; display: flex; align-items: center; gap: 4px; color: var(--muted); flex: none; max-width: 60%; }
+.pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick::after { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px); opacity: .6; flex: none; }
+.pick select { position: absolute; inset: 0; opacity: 0; width: 100%; font-size: 16px; -webkit-appearance: none; appearance: none; }
+.cell.tap:active { background: var(--fill); }
+.link { color: var(--accent); background: none; border: 0; padding: 0; text-align: left; width: 100%; }
+.link.danger { color: var(--err); }
+.link:disabled { opacity: .45; }
+/* 开关 */
+.sw { position: relative; width: 51px; height: 31px; flex: none; }
+.sw input { position: absolute; opacity: 0; inset: 0; margin: 0; z-index: 1; }
+.sw span { position: absolute; inset: 0; background: var(--fill); border-radius: 31px; transition: background .2s; }
+.sw span::before { content: ""; position: absolute; width: 27px; height: 27px; left: 2px; top: 2px; background: #fff;
+  border-radius: 50%; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform .2s; }
+.sw input:checked + span { background: var(--ok); }
+.sw input:checked + span::before { transform: translateX(20px); }
+input[type=range] { width: 140px; accent-color: var(--accent); }
+.check { width: 22px; height: 22px; accent-color: var(--accent); flex: none; margin: 0; }
+
+/* ---------- 推送记录 ---------- */
+.seg { display: flex; background: var(--fill); border-radius: 9px; padding: 2px; margin: 4px 0 4px; }
+.seg button { flex: 1; border: 0; background: none; border-radius: 7px; padding: 6px 4px; font-size: 13px; font-weight: 500; }
+.seg button.on { background: var(--card); box-shadow: 0 3px 8px rgba(0,0,0,.12); }
+.ev { padding: 12px 16px; position: relative; }
+.ev + .ev::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--line); }
+.ev-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.ev-head b { color: var(--text); font-size: 15px; }
+.ev-head .time { margin-left: auto; }
+.ev-title { font-size: 16px; margin-top: 4px; word-break: break-word; }
+.ev-body { font-size: 14px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.ev.open .ev-body { -webkit-line-clamp: unset; }
+.ev-err { font-size: 13px; color: var(--err); margin-top: 4px; word-break: break-word; }
+.tag { font-size: 12px; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+.tag.pushed { background: var(--ok-soft); color: var(--ok); }
+.tag.muted { background: var(--fill); color: var(--muted); }
+.tag.error { background: var(--err-soft); color: var(--err); }
+.tag.gen { background: var(--warn-soft); color: var(--warn); }
+.more { display: block; margin: 14px auto 0; border: 0; background: none; color: var(--accent); font-size: 15px; padding: 8px 16px; }
+.empty { color: var(--muted); text-align: center; padding: 36px 16px; font-size: 15px; }
+
+/* ---------- 日志 ---------- */
+.search { display: flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 10px; padding: 0 10px; height: 38px; }
+.search svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; min-width: 0; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { border: 0; background: var(--card); color: var(--text); border-radius: 999px; padding: 6px 13px; font-size: 14px; white-space: nowrap; flex: none; }
+.chip.on { background: var(--accent); color: #fff; }
+.chip.pick { color: var(--text); max-width: none; }
+.logs { font-family: var(--mono); font-size: 12px; line-height: 1.45; }
+.lg { padding: 7px 12px; position: relative; word-break: break-word; white-space: pre-wrap; }
+.lg + .lg::before { content: ""; position: absolute; top: 0; left: 12px; right: 0; border-top: .5px solid var(--line); }
+.lg .meta { color: var(--muted); font-size: 11px; display: block; }
+.lg .lv { font-weight: 700; margin-right: 4px; }
+.lg.WARNING .lv { color: var(--warn); } .lg.ERROR .lv, .lg.CRITICAL .lv { color: var(--err); }
+.lg.dbg .m { color: var(--accent); }
+.newbtn { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(70px + var(--sb)); z-index: 6;
+  border: 0; background: var(--accent); color: #fff; border-radius: 999px; padding: 7px 16px; font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+
+/* ---------- 底部标签栏 ---------- */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-top: .5px solid var(--line); padding: 6px var(--sr) calc(var(--sb) + 4px) var(--sl); }
+.tabbar button { flex: 1; border: 0; background: none; color: var(--muted); display: flex; flex-direction: column;
+  align-items: center; gap: 2px; font-size: 10px; font-weight: 500; padding: 2px 0; }
+.tabbar button svg { width: 26px; height: 26px; }
+.tabbar button.on { color: var(--accent); }
+.tabbar .dot { position: absolute; margin-left: 20px; margin-top: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
+
+/* ---------- 登录 ---------- */
+.login { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: calc(var(--st) + 24px) 24px calc(var(--sb) + 24px); text-align: center; }
+.login img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.login h2 { font-size: 26px; margin: 18px 0 6px; }
+.login p { color: var(--muted); font-size: 15px; margin: 0 0 22px; max-width: 340px; line-height: 1.45; }
+.login code { font-family: var(--mono); font-size: 12px; background: var(--fill); padding: 2px 5px; border-radius: 5px; word-break: break-all; }
+.login input { width: 100%; max-width: 340px; height: 50px; border: 0; border-radius: 12px; background: var(--card);
+  padding: 0 16px; font-size: 17px; outline: none; }
+.btn { width: 100%; max-width: 340px; height: 50px; border: 0; border-radius: 12px; background: var(--accent); color: #fff;
+  font-size: 17px; font-weight: 600; margin-top: 12px; }
+.btn:disabled { opacity: .5; }
+.login .err { color: var(--err); min-height: 22px; margin-top: 10px; font-size: 15px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(76px + var(--sb)); transform: translate(-50%, 10px); z-index: 9;
+  background: rgba(30,30,32,.92); color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 15px;
+  opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; max-width: 86vw; text-align: center; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<div id="login" class="card login hidden">
-  <h2>登录</h2>
-  <p class="hint">输入 hub 令牌（在 N150 上运行 <code>grep ^HUB_TOKEN= /home/zibo/docker/msg-notifier/.env</code> 查看）。令牌只保存在这个浏览器里。</p>
-  <input id="tokenInput" type="password" placeholder="HUB_TOKEN" autocomplete="current-password">
-  <button class="btn primary" id="loginBtn">进入</button>
-  <p class="hint" id="loginErr" style="color:var(--err);margin-top:8px"></p>
-</div>
+<!-- 登录 -->
+<section id="login" class="login hidden">
+  <img src="/static/icons/icon-180.png" alt="">
+  <h2>消息推送控制台</h2>
+  <p>输入 hub 令牌，只需登录一次，之后会一直保持登录。令牌在 N150 上查看：<br><code>grep ^HUB_TOKEN= ~/docker/msg-notifier/.env</code></p>
+  <input id="tokenInput" type="password" placeholder="HUB_TOKEN" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+  <button class="btn" id="loginBtn">登录</button>
+  <div class="err" id="loginErr"></div>
+</section>
 
-<div id="main" class="hidden">
-  <header>
-    <h1>消息推送控制台</h1>
-    <div class="chips" id="chips"></div>
+<!-- 主界面 -->
+<div id="app" class="hidden">
+  <header class="top" id="top">
+    <div class="top-row">
+      <h1 id="title">设置</h1>
+      <button class="icon-btn" id="refreshBtn" aria-label="刷新">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+      </button>
+    </div>
+    <div class="status" id="status"></div>
   </header>
-  <nav>
-    <button data-tab="settings" class="on">设置</button>
-    <button data-tab="events">推送记录</button>
-    <button data-tab="logs">日志</button>
+
+  <main>
+    <!-- 设置 -->
+    <section id="tab-settings">
+      <div class="group" style="margin-top:12px">
+        <label class="cell big">
+          <div class="t" id="enabledText">推送已开启</div>
+          <div class="sw"><input type="checkbox" id="enabled"><span></span></div>
+        </label>
+      </div>
+      <div class="sec-foot">关闭后所有消息只记录，不推送到手机。</div>
+
+      <div class="sec-title">应用</div>
+      <div class="group" id="apps"></div>
+      <div class="sec-foot">“默认”表示跟随下方的默认推送方式。点“发送测试”可在手机上试听。</div>
+
+      <div class="sec-title">默认推送方式</div>
+      <div class="group">
+        <div class="cell tap"><div class="t">提醒类型<small id="levelHint"></small></div>
+          <label class="pick"><span id="levelText"></span><select id="level"></select></label></div>
+        <div class="cell" id="volumeRow"><div class="t">重要提醒音量</div>
+          <input type="range" id="volume" min="0" max="10" step="1"><span class="v" id="volumeVal" style="width:22px;text-align:right"></span></div>
+        <div class="cell tap"><div class="t">铃声</div>
+          <label class="pick"><span id="soundText"></span><select id="sound"></select></label></div>
+        <label class="cell"><div class="t">持续响铃<small>像来电一样连续响约 30 秒</small></div>
+          <div class="sw"><input type="checkbox" id="call"><span></span></div></label>
+        <label class="cell"><div class="t">显示消息内容<small>关闭后只推“谁发来消息”</small></div>
+          <div class="sw"><input type="checkbox" id="showBody"><span></span></div></label>
+        <div class="cell tap"><button class="link" id="testDefault">发送测试推送</button></div>
+      </div>
+
+      <div class="sec-title">工作电脑</div>
+      <div class="group">
+        <div class="cell tap"><div class="t">离开多久才推送<small>这段时间内动过键盘鼠标就不推送</small></div>
+          <label class="pick"><span id="idleText"></span><select id="idle"></select></label></div>
+        <div id="hostsList"></div>
+      </div>
+      <div class="sec-foot">工作电脑约 1 分钟内应用新参数。</div>
+
+      <div class="sec-title">调试日志</div>
+      <div class="group" id="debugApps"></div>
+      <div class="sec-foot">勾选的应用会记录详细事件、弹窗原文和截图，用于排查识别问题。</div>
+
+      <div class="group" style="margin-top:28px">
+        <div class="cell tap"><button class="link danger" id="logoutBtn">退出登录</button></div>
+      </div>
+    </section>
+
+    <!-- 推送记录 -->
+    <section id="tab-events" class="hidden">
+      <div class="seg" id="evSeg">
+        <button data-v="" class="on">全部</button><button data-v="pushed">已推送</button>
+        <button data-v="muted">已静音</button><button data-v="error">失败</button>
+      </div>
+      <div class="chips" id="evApps"></div>
+      <div class="group" id="evList" style="margin-top:8px"></div>
+      <button class="more hidden" id="evMore">加载更多</button>
+    </section>
+
+    <!-- 日志 -->
+    <section id="tab-logs" class="hidden">
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="lgQ" type="search" placeholder="搜索，如 飞书、FLASH、失败" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </label>
+      <div class="chips" id="lgChips">
+        <button class="chip on" data-lv="">全部</button>
+        <button class="chip" data-lv="WARNING,ERROR,CRITICAL">警告及错误</button>
+        <button class="chip" data-lv="ERROR,CRITICAL">仅错误</button>
+        <button class="chip" data-q="[DEBUG-">调试</button>
+        <label class="chip pick" id="hostChip"><span id="hostText">全部电脑</span><select id="lgHost"></select></label>
+      </div>
+      <div class="group logs" id="lgList" style="margin-top:8px"></div>
+      <button class="more hidden" id="lgMore">加载更早的日志</button>
+    </section>
+  </main>
+
+  <button class="newbtn hidden" id="newBtn">↓ 有新日志</button>
+
+  <nav class="tabbar">
+    <button data-tab="settings" class="on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>
+      设置</button>
+    <button data-tab="events">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      推送记录<span class="dot hidden" id="evDot"></span></button>
+    <button data-tab="logs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+      日志</button>
   </nav>
-
-  <section id="tab-settings">
-    <div class="card">
-      <div class="big">
-        <label class="switch"><input type="checkbox" id="enabled"><span></span></label>
-        <div><strong id="enabledText">推送已开启</strong>
-          <div class="hint" style="margin:0">关闭后所有消息只记录、不推送到手机。</div></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>应用</h2>
-      <p class="hint">每个应用可以单独开关，也可以单独设置声音和提醒类型（“默认”表示跟随下方的默认推送方式）。</p>
-      <div class="apps" id="apps"></div>
-    </div>
-
-    <div class="card">
-      <h2>默认推送方式</h2>
-      <p class="hint">铃声只能在手机上听到：选好后点“发测试推送”试听。</p>
-      <div class="row"><div class="label">提醒类型<small id="levelHint"></small></div>
-        <div class="controls"><select id="level"></select></div></div>
-      <div class="row" id="volumeRow"><div class="label">重要提醒音量<small>仅“重要提醒”类型生效，0–10</small></div>
-        <div class="controls"><input type="range" id="volume" min="0" max="10" step="1"><span id="volumeVal"></span></div></div>
-      <div class="row"><div class="label">铃声</div>
-        <div class="controls"><select id="sound"></select></div></div>
-      <div class="row"><div class="label">持续响铃<small>像来电一样连续响约 30 秒</small></div>
-        <div class="controls"><label class="switch"><input type="checkbox" id="call"><span></span></label></div></div>
-      <div class="row"><div class="label">显示消息内容<small>关闭后只推“谁发来消息”，不带正文</small></div>
-        <div class="controls"><label class="switch"><input type="checkbox" id="showBody"><span></span></label></div></div>
-      <div class="row"><div class="label"></div>
-        <div class="controls"><button class="btn" id="testDefault">发测试推送</button></div></div>
-    </div>
-
-    <div class="card">
-      <h2>工作电脑</h2>
-      <p class="hint">这些参数下发给工作电脑上的程序，约 1 分钟内生效。</p>
-      <div class="row"><div class="label">离开多久才推送<small>键盘鼠标在这段时间内有操作，视为在电脑前，不推送</small></div>
-        <div class="controls"><select id="idle"></select></div></div>
-      <div class="row"><div class="label">调试日志<small>勾选的应用会记录详细事件、弹窗原文和截图，用于排查</small></div>
-        <div class="controls" id="debugApps"></div></div>
-      <div class="row"><div class="label">在线状态</div>
-        <div class="controls" id="hostsList" style="color:var(--muted)"></div></div>
-    </div>
-  </section>
-
-  <section id="tab-events" class="hidden">
-    <div class="card">
-      <div class="filters">
-        <select id="evApp"><option value="">全部应用</option></select>
-        <select id="evStatus">
-          <option value="">全部状态</option><option value="pushed">已推送</option>
-          <option value="muted">已静音</option><option value="error">失败</option>
-        </select>
-        <button class="btn" id="evRefresh">刷新</button>
-      </div>
-      <table>
-        <thead><tr><th>时间</th><th>应用</th><th>内容</th><th class="hide-sm">来源</th><th>状态</th></tr></thead>
-        <tbody id="evBody"></tbody>
-      </table>
-      <div class="more"><button class="btn" id="evMore">加载更多</button></div>
-    </div>
-  </section>
-
-  <section id="tab-logs" class="hidden">
-    <div class="card">
-      <div class="filters">
-        <input type="text" id="lgQ" placeholder="搜索关键字，如 飞书、FLASH、推送失败">
-        <select id="lgLevel">
-          <option value="">全部级别</option>
-          <option value="INFO,WARNING,ERROR,CRITICAL">INFO 及以上</option>
-          <option value="WARNING,ERROR,CRITICAL">WARNING 及以上</option>
-          <option value="ERROR,CRITICAL">仅 ERROR</option>
-        </select>
-        <select id="lgHost"><option value="">全部电脑</option></select>
-        <label class="controls" style="color:var(--muted);font-size:12px">
-          <label class="switch"><input type="checkbox" id="lgAuto" checked><span></span></label>自动刷新</label>
-      </div>
-      <div class="logs" id="lgList"></div>
-      <div class="more"><button class="btn" id="lgMore">加载更早的日志</button></div>
-    </div>
-  </section>
-</div>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
 const LEVELS = [
   ["passive", "静默", "只进 Bark 历史，不弹出、不响"],
-  ["active", "普通", "正常弹出和响铃；专注模式下可能被拦"],
-  ["timeSensitive", "时效性", "专注模式下也会弹出（需在 iPhone 设置里允许 Bark 时效性通知）"],
-  ["critical", "重要提醒", "静音、勿扰时也会响（需在 iPhone 设置里允许 Bark 重要提醒）"],
+  ["active", "普通", "正常弹出和响铃，专注模式下可能被拦"],
+  ["timeSensitive", "时效性", "专注模式下也会弹出"],
+  ["critical", "重要提醒", "静音、勿扰时也会响"],
 ];
 const SOUNDS = ["alarm","anticipate","bell","birdsong","bloom","calypso","chime","choo","descent","electronic",
   "fanfare","glass","gotosleep","healthnotification","horn","ladder","mailsent","minuet","multiwayinvitation",
@@ -221,22 +298,19 @@ const SOUNDS = ["alarm","anticipate","bell","birdsong","bloom","calypso","chime"
   "telegraph","tiptoes","typewriters","update"];
 const IDLE = [[0,"总是推送"],[60,"1 分钟"],[180,"3 分钟"],[300,"5 分钟"],[600,"10 分钟"],[900,"15 分钟"],[1800,"30 分钟"]];
 const STATUS = {pushed: "已推送", muted: "已静音", error: "失败"};
+const APP_COLORS = {"Teams": "#5b5fc7", "飞书": "#3370ff", "Outlook": "#0f6cbd"};
+const TITLES = {settings: "设置", events: "推送记录", logs: "日志"};
 
 const $ = (id) => document.getElementById(id);
-let token = "";
-try { token = localStorage.getItem("hubToken") || ""; } catch (e) {}
-let settings = null, appNames = [];
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} },
+};
+let settings = null, appNames = [], tab = store.get("hubTab") || "settings";
 
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.classList.add("show");
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1600);
-}
-async function api(path, opts = {}) {
-  const r = await fetch(path, {...opts, headers: {"Content-Type": "application/json",
-    "Authorization": "Bearer " + token, ...(opts.headers || {})}});
-  if (r.status === 401) { showLogin("令牌不正确"); throw new Error("401"); }
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  return r.json();
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1800);
 }
 function el(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -248,35 +322,72 @@ function el(tag, attrs = {}, ...kids) {
   return e;
 }
 function fmtTime(ts) {
-  const d = new Date(ts * 1000), now = new Date();
-  const p = (n) => String(n).padStart(2, "0");
-  const hm = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  const d = new Date(ts * 1000), now = new Date(), p = (n) => String(n).padStart(2, "0");
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  if (d.toDateString() === now.toDateString()) return hm + `:${p(d.getSeconds())}`;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return "昨天 " + hm;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
 }
 function ago(sec) {
-  if (sec < 60) return Math.round(sec) + " 秒前";
+  if (sec < 60) return "刚刚";
   if (sec < 3600) return Math.round(sec / 60) + " 分钟前";
   if (sec < 86400) return Math.round(sec / 3600) + " 小时前";
   return Math.round(sec / 86400) + " 天前";
 }
-function fillSelect(sel, items, withDefault) {
+function fillSelect(sel, items, def) {
   sel.innerHTML = "";
-  if (withDefault) sel.append(el("option", {value: "", text: withDefault}));
+  if (def) sel.append(el("option", {value: "", text: def}));
   for (const [v, t] of items) sel.append(el("option", {value: v, text: t}));
 }
+function selText(sel) { return sel.options[sel.selectedIndex]?.text || ""; }
 
-// ---------------------------------------------------------------- 登录
+// ---------------------------------------------------------------- 请求与登录
+// 登录后服务器发一个长期 Cookie（10 年）；另在本机存一份令牌，万一 Cookie 丢了可静默重新登录。
+let relogging = null;
+async function api(path, opts = {}, retry = true) {
+  const r = await fetch(path, {...opts, credentials: "same-origin",
+    headers: {"Content-Type": "application/json", ...(opts.headers || {})}});
+  if (r.status === 401) {
+    const saved = store.get("hubToken");
+    if (retry && saved) {
+      relogging = relogging || login(saved).finally(() => { relogging = null; });
+      if (await relogging) return api(path, opts, false);
+    }
+    showLogin(saved ? "登录已失效，请重新输入令牌" : "");
+    throw new Error("401");
+  }
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function login(token) {
+  try {
+    const r = await fetch("/api/login", {method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify({token})});
+    return r.ok;
+  } catch (e) { return false; }
+}
 function showLogin(err) {
-  $("main").classList.add("hidden"); $("login").classList.remove("hidden");
+  $("app").classList.add("hidden"); $("login").classList.remove("hidden");
   $("loginErr").textContent = err || "";
 }
 $("loginBtn").onclick = async () => {
-  token = $("tokenInput").value.trim();
-  try { await api("/api/status"); } catch (e) { return; }
-  try { localStorage.setItem("hubToken", token); } catch (e) {}
+  const token = $("tokenInput").value.trim();
+  if (!token) return;
+  $("loginBtn").disabled = true; $("loginErr").textContent = "";
+  const ok = await login(token);
+  $("loginBtn").disabled = false;
+  if (!ok) { $("loginErr").textContent = "令牌不正确"; return; }
+  store.set("hubToken", token); $("tokenInput").value = "";
   start();
 };
 $("tokenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
+$("logoutBtn").onclick = async () => {
+  if (!confirm("退出后需要重新输入令牌，确定吗？")) return;
+  store.set("hubToken", null);
+  await fetch("/api/logout", {method: "POST", credentials: "same-origin"});
+  showLogin();
+};
 
 // ---------------------------------------------------------------- 设置
 let saveTimer = null;
@@ -285,24 +396,29 @@ function save() {
   saveTimer = setTimeout(async () => {
     // 本地 settings 是唯一数据源（各控件闭包引用的就是它），不要用返回值替换
     try { await api("/api/settings", {method: "PUT", body: JSON.stringify(settings)}); toast("已保存"); }
-    catch (e) { if (e.message !== "401") toast("保存失败：" + e.message); }
+    catch (e) { if (e.message !== "401") toast("保存失败"); }
   }, 250);
 }
 function renderSettings() {
   const s = settings;
   $("enabled").checked = s.enabled;
   $("enabledText").textContent = s.enabled ? "推送已开启" : "推送已暂停";
-  $("level").value = s.bark.level;
+  $("level").value = s.bark.level; $("levelText").textContent = selText($("level"));
   $("levelHint").textContent = (LEVELS.find((l) => l[0] === s.bark.level) || [])[2] || "";
   $("volume").value = s.bark.volume ?? 5; $("volumeVal").textContent = $("volume").value;
   $("volumeRow").classList.toggle("hidden", s.bark.level !== "critical");
-  $("sound").value = s.bark.sound || "";
+  $("sound").value = s.bark.sound || ""; $("soundText").textContent = selText($("sound"));
   $("call").checked = !!s.bark.call;
   $("showBody").checked = s.bark.show_body !== false;
-  $("idle").value = String(s.agent.idle_seconds);
-  if (![...$("idle").options].some((o) => o.value === String(s.agent.idle_seconds)))
-    $("idle").append(el("option", {value: s.agent.idle_seconds, text: s.agent.idle_seconds + " 秒"})), $("idle").value = String(s.agent.idle_seconds);
+  const idle = String(s.agent.idle_seconds);
+  if (![...$("idle").options].some((o) => o.value === idle)) $("idle").append(el("option", {value: idle, text: idle + " 秒"}));
+  $("idle").value = idle; $("idleText").textContent = selText($("idle"));
   renderApps();
+}
+function pickCell(label, sel, onchange) {
+  const span = el("span", {text: selText(sel)});
+  sel.onchange = () => { span.textContent = selText(sel); onchange(sel.value); };
+  return el("div", {class: "cell sub tap"}, el("div", {class: "t", text: label}), el("label", {class: "pick"}, span, sel));
 }
 function renderApps() {
   const box = $("apps"); box.innerHTML = "";
@@ -311,24 +427,26 @@ function renderApps() {
     const cfg = settings.apps[name] || (settings.apps[name] = {enabled: true});
     const b = cfg.bark || {};
     const sw = el("input", {type: "checkbox"}); sw.checked = cfg.enabled !== false;
-    sw.onchange = () => { cfg.enabled = sw.checked; save(); };
-    const snd = el("select"); fillSelect(snd, SOUNDS.map((x) => [x, x]), "默认");
-    snd.value = b.sound || "";
-    snd.onchange = () => { cfg.bark = {...(cfg.bark || {}), sound: snd.value}; save(); };
-    const lv = el("select"); fillSelect(lv, LEVELS.map((l) => [l[0], l[1]]), "默认");
-    lv.value = b.level || "";
-    lv.onchange = () => { cfg.bark = {...(cfg.bark || {}), level: lv.value}; save(); };
-    const test = el("button", {class: "btn", text: "测试", onclick: () => testPush(name, test)});
-    box.append(el("div", {class: "app"},
-      el("div", {class: "name"}, el("label", {class: "switch"}, sw, el("span")), el("span", {text: name})),
-      el("div", {class: "controls"}, el("span", {class: "pair"}, el("label", {text: "声音"}), snd),
-        el("span", {class: "pair"}, el("label", {text: "类型"}), lv), test)));
-    const cb = el("input", {type: "checkbox"}); cb.checked = settings.agent.debug_apps.includes(name);
+    const subs = [];
+    sw.onchange = () => { cfg.enabled = sw.checked; subs.forEach((x) => x.classList.toggle("hidden", !sw.checked)); save(); };
+    const ico = el("div", {class: "app-ico", style: `background:${APP_COLORS[name] || "#8e8e93"}`, text: name.slice(0, 1)});
+    box.append(el("label", {class: "cell"}, ico, el("div", {class: "t", text: name}),
+      el("div", {class: "sw"}, sw, el("span"))));
+    const snd = el("select"); fillSelect(snd, SOUNDS.map((x) => [x, x]), "默认"); snd.value = b.sound || "";
+    const lv = el("select"); fillSelect(lv, LEVELS.map((l) => [l[0], l[1]]), "默认"); lv.value = b.level || "";
+    const test = el("button", {class: "link", text: "发送测试"});
+    test.onclick = () => testPush(name, test);
+    subs.push(pickCell("声音", snd, (v) => { cfg.bark = {...(cfg.bark || {}), sound: v}; save(); }),
+      pickCell("提醒类型", lv, (v) => { cfg.bark = {...(cfg.bark || {}), level: v}; save(); }),
+      el("div", {class: "cell sub tap"}, test));
+    subs.forEach((x) => { x.classList.toggle("hidden", !sw.checked); box.append(x); });
+
+    const cb = el("input", {type: "checkbox", class: "check"}); cb.checked = settings.agent.debug_apps.includes(name);
     cb.onchange = () => {
       const set = new Set(settings.agent.debug_apps); cb.checked ? set.add(name) : set.delete(name);
       settings.agent.debug_apps = [...set]; save();
     };
-    dbg.append(el("label", {style: "display:flex;gap:4px;align-items:center"}, cb, name));
+    dbg.append(el("label", {class: "cell"}, el("div", {class: "t", text: name}), cb));
   }
 }
 async function testPush(app, btn) {
@@ -336,147 +454,193 @@ async function testPush(app, btn) {
   try {
     const r = await api("/api/test", {method: "POST", body: JSON.stringify({app})});
     toast(r.ok ? "已发送，请看手机" : "发送失败：" + r.detail);
-  } catch (e) { if (e.message !== "401") toast("发送失败：" + e.message); }
+  } catch (e) { if (e.message !== "401") toast("发送失败"); }
   btn.disabled = false;
-  loadStatus();
 }
 function bindSettings() {
   fillSelect($("level"), LEVELS.map((l) => [l[0], l[1]]));
-  fillSelect($("sound"), SOUNDS.map((x) => [x, x]), "默认铃声");
+  fillSelect($("sound"), SOUNDS.map((x) => [x, x]), "默认");
   fillSelect($("idle"), IDLE.map(([v, t]) => [String(v), t]));
   $("enabled").onchange = () => { settings.enabled = $("enabled").checked; renderSettings(); save(); };
   $("level").onchange = () => { settings.bark.level = $("level").value; renderSettings(); save(); };
   $("volume").oninput = () => { $("volumeVal").textContent = $("volume").value; };
   $("volume").onchange = () => { settings.bark.volume = Number($("volume").value); save(); };
-  $("sound").onchange = () => { settings.bark.sound = $("sound").value; save(); };
+  $("sound").onchange = () => { settings.bark.sound = $("sound").value; renderSettings(); save(); };
   $("call").onchange = () => { settings.bark.call = $("call").checked; save(); };
   $("showBody").onchange = () => { settings.bark.show_body = $("showBody").checked; save(); };
-  $("idle").onchange = () => { settings.agent.idle_seconds = Number($("idle").value); save(); };
+  $("idle").onchange = () => { settings.agent.idle_seconds = Number($("idle").value); renderSettings(); save(); };
   $("testDefault").onclick = () => testPush("", $("testDefault"));
 }
 
 // ---------------------------------------------------------------- 状态
+let lastSeenEvent = Number(store.get("hubSeenEvent") || 0);
 async function loadStatus() {
   let st; try { st = await api("/api/status"); } catch (e) { return; }
-  const chips = $("chips"); chips.innerHTML = "";
+  const box = $("status"); box.innerHTML = "";
   const hosts = st.hosts.filter((h) => h.host !== "hub");
   const online = hosts.some((h) => st.now - h.last_seen < 180);
-  chips.append(el("span", {class: "chip " + (online ? "ok" : "bad"),
-    text: hosts.length ? (online ? "工作电脑在线" : "工作电脑离线") : "工作电脑未连接过"}));
-  chips.append(el("span", {class: "chip " + (st.bark_keys ? "ok" : "bad"), text: `Bark 设备 ${st.bark_keys}`}));
+  box.append(el("span", {class: "pill " + (online ? "ok" : "bad")}, el("i"),
+    hosts.length ? (online ? "工作电脑在线" : "工作电脑离线") : "工作电脑未连接"));
+  box.append(el("span", {class: "pill " + (st.bark_keys ? "ok" : "bad")}, el("i"), st.bark_keys ? "Bark 已配置" : "Bark 未配置"));
   const c = st.last24h || {};
-  chips.append(el("span", {class: "chip", text: `24 小时：推送 ${c.pushed || 0}` + (c.error ? `，失败 ${c.error}` : "")}));
+  box.append(el("span", {class: "pill"}, `24h 推送 ${c.pushed || 0}` + (c.error ? ` · 失败 ${c.error}` : "")));
   const hl = $("hostsList"); hl.innerHTML = "";
-  if (!hosts.length) hl.textContent = "还没有工作电脑连接过";
-  for (const h of hosts) hl.append(el("div", {text: `${h.host}（${h.ip}）：${ago(st.now - h.last_seen)}`}));
+  if (!hosts.length) hl.append(el("div", {class: "cell"}, el("div", {class: "t", text: "在线状态"}), el("div", {class: "v", text: "未连接过"})));
+  for (const h of hosts) {
+    const on = st.now - h.last_seen < 180;
+    hl.append(el("div", {class: "cell"}, el("div", {class: "t"}, h.host, el("small", {text: h.ip})),
+      el("span", {class: "pill " + (on ? "ok" : "bad")}, el("i"), on ? "在线" : ago(st.now - h.last_seen))));
+  }
   const sel = $("lgHost"), cur = sel.value;
-  sel.innerHTML = ""; sel.append(el("option", {value: "", text: "全部电脑"}));
-  for (const h of hosts) sel.append(el("option", {value: h.host, text: h.host}));
-  sel.value = cur;
+  fillSelect(sel, hosts.map((h) => [h.host, h.host]), "全部电脑"); sel.value = cur;
+  $("hostText").textContent = selText(sel);
+  // 推送记录标签上的小红点：有比上次查看更新的推送
+  $("evDot").classList.toggle("hidden", !(st.last_event_ts && st.last_event_ts > lastSeenEvent && tab !== "events"));
+  if (tab === "events" && st.last_event_ts) { lastSeenEvent = st.last_event_ts; store.set("hubSeenEvent", String(lastSeenEvent)); }
 }
 
 // ---------------------------------------------------------------- 推送记录
-let evLastId = 0;
+let evLastId = 0, evStatus = "", evApp = "";
+function renderEvAppChips() {
+  const box = $("evApps"); box.innerHTML = "";
+  for (const [v, t] of [["", "全部应用"], ...appNames.map((n) => [n, n]), ["test", "测试"]]) {
+    box.append(el("button", {class: "chip" + (v === evApp ? " on" : ""), text: t,
+      onclick: () => { evApp = v; renderEvAppChips(); loadEvents(false); }}));
+  }
+}
 async function loadEvents(more) {
-  const q = new URLSearchParams({limit: 50});
-  if ($("evApp").value) q.set("app", $("evApp").value);
-  if ($("evStatus").value) q.set("status", $("evStatus").value);
+  const q = new URLSearchParams({limit: 40});
+  if (evApp) q.set("app", evApp);
+  if (evStatus) q.set("status", evStatus);
   if (more && evLastId) q.set("before_id", evLastId);
   let rows; try { rows = await api("/api/events?" + q); } catch (e) { return; }
-  const tb = $("evBody"); if (!more) tb.innerHTML = "";
+  const box = $("evList"); if (!more) box.innerHTML = "";
   for (const r of rows) {
     evLastId = r.id;
-    const content = el("td", {}, el("div", {text: r.title || (r.generic ? "有新消息" : "")}),
-      r.body ? el("div", {class: "body", text: r.body.length > 300 ? r.body.slice(0, 300) + "…" : r.body}) : null,
-      r.detail ? el("div", {class: "body", style: "color:var(--err)", text: r.detail}) : null);
-    tb.append(el("tr", {}, el("td", {class: "time", text: fmtTime(r.ts)}), el("td", {text: r.app}), content,
-      el("td", {class: "time hide-sm", text: r.source + (r.generic ? "（兜底）" : "")}),
-      el("td", {}, el("span", {class: "badge " + r.status, text: STATUS[r.status] || r.status}))));
+    const item = el("div", {class: "ev"},
+      el("div", {class: "ev-head"}, el("b", {text: r.app === "test" ? "测试" : r.app}),
+        el("span", {class: "tag " + r.status, text: STATUS[r.status] || r.status}),
+        r.generic ? el("span", {class: "tag gen", text: "兜底"}) : null,
+        el("span", {class: "time", text: fmtTime(r.ts)})),
+      el("div", {class: "ev-title", text: r.title || (r.generic ? "有新消息" : "")}),
+      r.body ? el("div", {class: "ev-body", text: r.body}) : null,
+      r.detail ? el("div", {class: "ev-err", text: r.detail}) : null);
+    item.onclick = () => item.classList.toggle("open");
+    box.append(item);
   }
-  if (!more && !rows.length) tb.append(el("tr", {}, el("td", {colspan: 5, class: "empty", text: "暂无记录"})));
-  $("evMore").classList.toggle("hidden", rows.length < 50);
+  if (!more && !rows.length) box.append(el("div", {class: "empty", text: "暂无记录"}));
+  $("evMore").classList.toggle("hidden", rows.length < 40);
+  if (!more && rows.length) { lastSeenEvent = Math.max(lastSeenEvent, rows[0].ts); store.set("hubSeenEvent", String(lastSeenEvent)); $("evDot").classList.add("hidden"); }
 }
-$("evRefresh").onclick = () => loadEvents(false);
-$("evApp").onchange = $("evStatus").onchange = () => loadEvents(false);
+$("evSeg").querySelectorAll("button").forEach((b) => b.onclick = () => {
+  $("evSeg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+  evStatus = b.dataset.v; loadEvents(false);
+});
 $("evMore").onclick = () => loadEvents(true);
 
-// ---------------------------------------------------------------- 日志
-let lgFirstId = 0, lgLastId = 0;
+// ---------------------------------------------------------------- 日志（新的在上面）
+let lgFirstId = 0, lgLastId = 0, lgLevel = "", lgQuick = "", pendingNew = [];
 function logRow(r) {
   const dbg = r.msg.includes("[DEBUG-");
-  return el("div", {class: "log" + (dbg ? " dbg" : "")},
-    el("span", {class: "t", text: fmtTime(r.ts)}),
-    el("span", {class: "h t", text: r.host}),
-    el("span", {class: "m"}, el("span", {class: "lv " + r.level, text: r.level === "INFO" ? "" : r.level + " "}), r.msg));
+  return el("div", {class: "lg " + r.level + (dbg ? " dbg" : "")},
+    el("span", {class: "meta", text: `${fmtTime(r.ts)} · ${r.host}`}),
+    r.level !== "INFO" ? el("span", {class: "lv", text: r.level}) : null,
+    el("span", {class: "m", text: r.msg}));
 }
 function logQuery(extra) {
-  const q = new URLSearchParams({limit: 200, ...extra});
-  if ($("lgQ").value.trim()) q.set("q", $("lgQ").value.trim());
-  if ($("lgLevel").value) q.set("level", $("lgLevel").value);
+  const q = new URLSearchParams({limit: 150, ...extra});
+  const text = [$("lgQ").value.trim(), lgQuick].filter(Boolean)[0];
+  if (text) q.set("q", text);
+  if (lgLevel) q.set("level", lgLevel);
   if ($("lgHost").value) q.set("host", $("lgHost").value);
   return q;
 }
-async function loadLogs(mode) {   // mode: "reset" | "more" | "new"
+async function loadLogs(mode) {   // "reset" | "more" | "poll"
   const list = $("lgList");
   let rows;
   try { rows = await api("/api/logs?" + logQuery(mode === "more" && lgLastId ? {before_id: lgLastId} : {})); }
   catch (e) { return; }
   if (mode === "reset") {
-    list.innerHTML = ""; lgFirstId = rows.length ? rows[0].id : 0;
-    for (const r of rows.slice().reverse()) list.append(logRow(r));
+    list.innerHTML = ""; pendingNew = []; $("newBtn").classList.add("hidden");
+    for (const r of rows) list.append(logRow(r));
+    lgFirstId = rows.length ? rows[0].id : 0;
     lgLastId = rows.length ? rows[rows.length - 1].id : 0;
     if (!rows.length) list.append(el("div", {class: "empty", text: "暂无日志"}));
-    list.scrollTop = list.scrollHeight;
+    $("lgMore").classList.toggle("hidden", rows.length < 150);
   } else if (mode === "more") {
-    const h = list.scrollHeight;
-    for (const r of rows) list.prepend(logRow(r));
+    for (const r of rows) list.append(logRow(r));
     if (rows.length) lgLastId = rows[rows.length - 1].id;
-    list.scrollTop = list.scrollHeight - h;
+    $("lgMore").classList.toggle("hidden", rows.length < 150);
   } else {
-    const fresh = rows.filter((r) => r.id > lgFirstId).reverse();
+    const fresh = rows.filter((r) => r.id > lgFirstId);
     if (!fresh.length) return;
-    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
-    list.querySelector(".empty")?.remove();
-    for (const r of fresh) list.append(logRow(r));
-    lgFirstId = fresh[fresh.length - 1].id;
-    if (atBottom) list.scrollTop = list.scrollHeight;
+    lgFirstId = fresh[0].id;
+    if (window.scrollY < 60) prependLogs(fresh);
+    else { pendingNew = fresh.concat(pendingNew); $("newBtn").classList.remove("hidden"); }
   }
-  if (mode !== "new") $("lgMore").classList.toggle("hidden", rows.length < 200);
 }
+function prependLogs(rows) {
+  const list = $("lgList"); list.querySelector(".empty")?.remove();
+  for (const r of rows.slice().reverse()) list.prepend(logRow(r));
+}
+$("newBtn").onclick = () => { prependLogs(pendingNew); pendingNew = []; $("newBtn").classList.add("hidden"); window.scrollTo({top: 0, behavior: "smooth"}); };
 let lgTimer = null;
-$("lgQ").oninput = () => { clearTimeout(lgTimer); lgTimer = setTimeout(() => loadLogs("reset"), 300); };
-$("lgLevel").onchange = $("lgHost").onchange = () => loadLogs("reset");
+$("lgQ").oninput = () => { clearTimeout(lgTimer); lgTimer = setTimeout(() => loadLogs("reset"), 350); };
+$("lgChips").querySelectorAll("button.chip").forEach((b) => b.onclick = () => {
+  $("lgChips").querySelectorAll("button.chip").forEach((x) => x.classList.toggle("on", x === b));
+  lgLevel = b.dataset.lv || ""; lgQuick = b.dataset.q || ""; loadLogs("reset");
+});
+$("lgHost").onchange = () => { $("hostText").textContent = selText($("lgHost")); loadLogs("reset"); };
 $("lgMore").onclick = () => loadLogs("more");
 
-// ---------------------------------------------------------------- 标签页
-let tab = "settings";
-try { tab = localStorage.getItem("hubTab") || "settings"; } catch (e) {}
+// ---------------------------------------------------------------- 标签页、刷新
 function showTab(t) {
-  tab = t;
-  try { localStorage.setItem("hubTab", t); } catch (e) {}
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  tab = t; store.set("hubTab", t);
+  document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
   for (const s of ["settings", "events", "logs"]) $("tab-" + s).classList.toggle("hidden", s !== t);
+  $("title").textContent = TITLES[t];
+  $("newBtn").classList.add("hidden");
+  window.scrollTo(0, 0);
   if (t === "events") loadEvents(false);
   if (t === "logs") loadLogs("reset");
 }
-document.querySelectorAll("nav button").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+document.querySelectorAll(".tabbar button").forEach((b) => b.onclick = () => {
+  if (b.dataset.tab === tab) { window.scrollTo({top: 0, behavior: "smooth"}); return; }
+  showTab(b.dataset.tab);
+});
+async function refreshAll() {
+  const btn = $("refreshBtn"); btn.classList.add("spin");
+  try {
+    [settings, appNames] = await Promise.all([api("/api/settings"), api("/api/apps")]);
+    renderSettings(); renderEvAppChips();
+    await loadStatus();
+    if (tab === "events") await loadEvents(false);
+    if (tab === "logs") await loadLogs("reset");
+  } catch (e) {}
+  setTimeout(() => btn.classList.remove("spin"), 300);
+}
+$("refreshBtn").onclick = refreshAll;
+window.addEventListener("scroll", () => $("top").classList.toggle("scrolled", window.scrollY > 4), {passive: true});
+// 从后台切回 App 时自动刷新
+document.addEventListener("visibilitychange", () => { if (!document.hidden && settings) refreshAll(); });
 
 // ---------------------------------------------------------------- 启动
 async function start() {
   try {
     [settings, appNames] = await Promise.all([api("/api/settings"), api("/api/apps")]);
-  } catch (e) { if (e.message !== "401") showLogin("连接失败：" + e.message); return; }
-  $("login").classList.add("hidden"); $("main").classList.remove("hidden");
-  renderSettings();
-  const ev = $("evApp"); ev.innerHTML = ""; ev.append(el("option", {value: "", text: "全部应用"}));
-  for (const n of [...appNames, "test"]) ev.append(el("option", {value: n, text: n === "test" ? "测试" : n}));
+  } catch (e) {
+    if (e.message !== "401") showLogin("连接失败，请确认手机和 N150 在同一网络");
+    return;
+  }
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  renderSettings(); renderEvAppChips();
   await loadStatus();
   showTab(tab);
 }
 bindSettings();
-setInterval(loadStatus, 15000);
-setInterval(() => { if (tab === "logs" && $("lgAuto").checked && !document.hidden) loadLogs("new"); }, 3000);
-if (token) start(); else showLogin();
+setInterval(() => { if (!document.hidden && settings) loadStatus(); }, 15000);
+setInterval(() => { if (!document.hidden && tab === "logs" && settings) loadLogs("poll"); }, 4000);
+start();
 </script>
 </body>
 </html>

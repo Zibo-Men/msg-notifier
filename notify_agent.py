@@ -66,7 +66,8 @@ DEFAULT_CONFIG = {
     "window_watch": True,
     "window_apps": [
         {"name": "Teams", "processes": ["ms-teams.exe"], "tray_keywords": ["Microsoft Teams"],
-         "parser": "teams", "popup_min": [300, 100], "popup_max": [700, 450]},
+         "parser": "teams", "popup_min": [300, 100], "popup_max": [700, 450],
+         "tray_icon_signal": False},  # Teams 有弹窗和闪烁，托盘图标变化（含读完消息）只会误报
         {"name": "飞书", "processes": ["lark.exe", "feishu.exe"], "tray_keywords": ["ChintOA", "飞书", "Feishu", "Lark"],
          "parser": "generic", "popup_min": [150, 50], "popup_max": [800, 600]},
     ],

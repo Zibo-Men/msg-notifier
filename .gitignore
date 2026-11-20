@@ -8,3 +8,4 @@ probe_shots/
 debug_shots/
 .env
 data/
+hub/static/icons/

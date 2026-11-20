@@ -24,7 +24,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from text_parse import clean_lines, clean_ocr, unread_in_title
+from text_parse import clean_lines, clean_ocr, parse_teams_items, unread_in_title
 
 log = logging.getLogger("notify_agent")
 
@@ -170,19 +170,6 @@ def uia_items(hwnd, max_nodes: int = 500) -> list[tuple[str, str, int]]:
     return items
 
 
-def parse_teams(hwnd) -> tuple[str, str] | None:
-    """Teams 弹窗结构：一个 Text 节点下挂着 [标签Group, Text 发送人, Text 消息…]。"""
-    ctrl = auto.ControlFromHandle(hwnd)
-    for c, _d in auto.WalkControl(ctrl, maxDepth=30):
-        if c.ControlTypeName != "TextControl":
-            continue
-        kids = [(k.Name or "").strip() for k in c.GetChildren() if k.ControlTypeName == "TextControl"]
-        kids = [k for k in kids if k]
-        if len(kids) >= 2:
-            return kids[0], "\n".join(kids[1:])
-    return None
-
-
 # ---------------------------------------------------------------- 主类
 class WindowWatcher:
     def __init__(self, cfg: dict, notifier) -> None:
@@ -197,6 +184,7 @@ class WindowWatcher:
         self.tray_base: dict[str, str] = {}         # tray key -> 初始名称
         self.tray_hash: dict[str, str] = {}
         self.tray_changed_at: dict[str, float] = {}
+        self.tray_hash_base: dict[str, str] = {}
         self.popup_seq = 0
         self._tray_tick = 0
 
@@ -286,11 +274,11 @@ class WindowWatcher:
         title = body = None
         if auto is not None:
             try:
+                items = uia_items(hwnd)
                 if app.get("parser") == "teams":
-                    parsed = parse_teams(hwnd)
+                    parsed = parse_teams_items(items)
                     if parsed:
                         title, body = parsed
-                items = uia_items(hwnd)
                 if debug:
                     self.dbg(app, f"UIA #{seq} 第{attempt}次 {len(items)} 段: "
                              + " | ".join(f"{t}@{d}:{n[:80]}" for t, n, d in items))
@@ -405,12 +393,14 @@ class WindowWatcher:
                 continue
             h = hashlib.md5(img.tobytes()).hexdigest()[:10]
             old = self.tray_hash.get(key)
+            base = self.tray_hash_base.setdefault(key, h)
             self.tray_hash[key] = h
             if old is not None and h != old:
                 quiet = now - self.tray_changed_at.get(key, 0)
                 self.tray_changed_at[key] = now
-                self.dbg(app, f"托盘图标变化 hash {old} -> {h}（距上次变化 {quiet:.0f}s）")
-                if quiet > 20:
+                self.dbg(app, f"托盘图标变化 hash {old} -> {h}（距上次变化 {quiet:.0f}s，初始 {base}）")
+                # 变回初始样子 = 未读被清掉，不算新消息；Teams 等有弹窗的应用可关闭此信号
+                if quiet > 20 and h != base and app.get("tray_icon_signal", True):
                     self.generic(app, "tray-icon")
 
     # ---- 消息循环
