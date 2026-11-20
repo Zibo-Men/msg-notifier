@@ -1,4 +1,5 @@
-.env
-data/
+config.json
+*.log
+*.log.*
 __pycache__/
 *.pyc

@@ -1,0 +1,20 @@
+{
+  "bark_server": "https://api.day.app",
+  "bark_key": "在 iPhone 的 Bark App 里复制",
+  "bark_level": "timeSensitive",
+  "bark_call": false,
+  "bark_sound": "",
+  "show_body": true,
+  "poll_seconds": 3,
+  "idle_seconds": 300,
+  "min_interval": 10,
+  "forward_unknown_apps": false,
+  "apps": {
+    "MSTeams": "Teams",
+    "OutlookForWindows": "Outlook",
+    "Feishu": "飞书",
+    "Lark": "Lark",
+    "Bytedance": "飞书"
+  },
+  "ignore_keywords": []
+}
