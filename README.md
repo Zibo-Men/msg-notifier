@@ -36,6 +36,19 @@ Windows 把通知中心里的所有 toast 存在 SQLite 数据库：
 
 日志：脚本同目录的 `notify_agent.log`（自动轮转）。
 
+## 探测飞书 / Teams 的提醒方式（probe.py）
+
+飞书和 Teams 的消息提醒不走 Windows 通知中心时，用这个脚本观察它们到底做了什么：任务栏闪烁、标题变化、自绘弹窗、任务栏/托盘图标变化、通知数据库里的 badge 等。
+
+```powershell
+pip install uiautomation pillow
+python probe.py              # 默认监测 120 秒，可加 --seconds 300
+```
+
+运行期间让别人给你发几条飞书、Teams 消息，中途把飞书/Teams 窗口最小化一次、切到别的窗口一次。结束后把 `probe_output.txt`（以及需要的话 `probe_shots/` 里的截图）发回来分析。
+
+提示：把飞书、Teams 的托盘图标设为常显（设置 → 个性化 → 任务栏 → 其他系统托盘图标），否则藏在 `^` 里的图标看不到。
+
 ## 配置项（config.json）
 
 | 键 | 说明 |

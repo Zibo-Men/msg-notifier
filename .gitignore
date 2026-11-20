@@ -3,3 +3,5 @@ config.json
 *.log.*
 __pycache__/
 *.pyc
+probe_output.txt
+probe_shots/

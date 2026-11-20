@@ -226,28 +226,33 @@ def diagnose(db: NotificationDB, limit: int) -> None:
     con = db._connect()
     try:
         rows = con.execute(
-            QUERY.replace("n.Id > ?", "1=1").replace("ORDER BY n.Id", "ORDER BY n.Id DESC LIMIT ?"),
+            "SELECT n.Id, n.ArrivalTime, n.Payload, IFNULL(h.PrimaryId, ''), n.Type FROM Notification n "
+            "LEFT JOIN NotificationHandler h ON n.HandlerId = h.RecordId ORDER BY n.Id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         apps = con.execute(
-            "SELECT h.PrimaryId, COUNT(n.Id) FROM NotificationHandler h "
-            "LEFT JOIN Notification n ON n.HandlerId = h.RecordId "
-            "GROUP BY h.RecordId HAVING COUNT(n.Id) > 0 ORDER BY COUNT(n.Id) DESC"
+            "SELECT h.PrimaryId, n.Type, COUNT(n.Id) FROM NotificationHandler h "
+            "JOIN Notification n ON n.HandlerId = h.RecordId "
+            "GROUP BY h.RecordId, n.Type ORDER BY COUNT(n.Id) DESC"
         ).fetchall()
     finally:
         con.close()
-    print(f"=== 最近 {len(rows)} 条 toast 通知（新的在前）===")
-    for rid, arrival, payload, app_id in rows:
+    print(f"=== 最近 {len(rows)} 条通知记录（所有类型，新的在前）===")
+    for rid, arrival, payload, app_id, typ in rows:
         title, body = parse_payload(payload)
         t = filetime_to_dt(arrival)
         print(f"[{rid}] {t:%m-%d %H:%M:%S} " if t else f"[{rid}] ", end="")
-        print(f"App ID: {app_id}")
-        print(f"      标题: {title}")
-        if body:
-            print("      正文: " + body.replace("\n", " / ")[:150])
-    print("\n=== 通知中心里有通知的应用 ===")
-    for app_id, n in apps:
-        print(f"{n:5d}  {app_id}")
+        print(f"type={typ}  App ID: {app_id}")
+        if title or body:
+            print(f"      标题: {title}")
+            if body:
+                print("      正文: " + body.replace("\n", " / ")[:150])
+        else:
+            raw = payload.decode("utf-8", "replace") if isinstance(payload, (bytes, bytearray)) else str(payload)
+            print("      原始: " + raw.replace("\n", " ")[:200])
+    print("\n=== 各应用的通知记录数（按类型）===")
+    for app_id, typ, n in apps:
+        print(f"{n:5d}  {typ:<6} {app_id}")
 
 
 def run(cfg: dict, db: NotificationDB) -> None:
