@@ -60,30 +60,15 @@ curl -s -X POST http://192.168.0.119:8101/api/test -H "Authorization: Bearer $(g
 
 查看 `HUB_TOKEN`（工作电脑要填同一个）：`grep ^HUB_TOKEN= .env`
 
-### hub 设置（data/settings.json）
+### 管理页面
 
-以后会做管理页面；现在可以直接改 `data/settings.json`（立即生效，不用重启），或用 `PUT /api/settings`。
+浏览器打开 **http://192.168.0.119:8101/**（局域网内，手机也可以），首次输入 `HUB_TOKEN` 登录（令牌只存在该浏览器里）。
 
-| 键 | 说明 |
-|---|---|
-| `enabled` | 总开关 |
-| `apps.<名字>.enabled` | 单个应用开关，例如 `apps.Teams.enabled=false` |
-| `apps.<名字>.bark` | 可选，按应用覆盖 Bark 参数，例如飞书用不同铃声 |
-| `bark.level` | `active` / `timeSensitive` / `critical` / `passive`（静默只进历史） |
-| `bark.call` | `true` = 持续响铃约 30 秒 |
-| `bark.sound` | Bark 内置铃声名 |
-| `bark.show_body` | `false` = 只推“谁发来消息”，不带正文 |
-| `agent.idle_seconds` | 下发给工作电脑：键鼠多久没动才推送（默认 300 秒，0 = 总是推送） |
-| `agent.debug_apps` | 下发给工作电脑：记录详细调试日志的应用（默认 `["飞书"]`） |
+- **设置**：推送总开关；每个应用的开关、声音、提醒类型和“测试”按钮；默认提醒类型 / 铃声 / 持续响铃 / 是否显示正文；下发给工作电脑的“离开多久才推送”和调试日志开关；工作电脑在线状态。改动自动保存、立即生效（工作电脑参数约 1 分钟内生效）。
+- **推送记录**：每条推送请求和结果（已推送 / 已静音 / 失败），可按应用、状态筛选。
+- **日志**：工作电脑上传的全部日志，可搜索关键字、按级别和电脑筛选，自动刷新；`[DEBUG-飞书]` 调试行高亮。
 
-工作电脑每 60 秒拉取一次 `agent` 里的参数。
-
-### 推送记录与日志
-
-- `GET /api/events?limit=50`：每条推送请求及结果（pushed / muted / error）
-- `GET /api/logs?limit=200&q=飞书`：工作电脑上传的全部日志（含 `[DEBUG-飞书]`）
-
-日志保留 30 天、推送记录保留 180 天（`.env` 里可改）。数据在 `data/hub.db`。
+设置保存在 `data/settings.json`，推送记录和日志在 `data/hub.db`（日志保留 30 天、推送记录 180 天，`.env` 可改）。所有接口见 `hub/app.py` 开头的说明。
 
 ## 第三步：工作电脑上运行 agent
 
@@ -96,7 +81,7 @@ curl -s -X POST http://192.168.0.119:8101/api/test -H "Authorization: Bearer $(g
    ```
 3. 复制 `config.example.json` 为 `config.json`，`hub_token` 填 N150 上 `.env` 里的 `HUB_TOKEN`。Bark key 不用在这里填（留空即可；填了的话 hub 连不上时会直推 Bark 作为备用）。
 4. 测试 工作电脑 → N150 → iPhone：`python notify_agent.py --test`
-5. 前台试跑：`python notify_agent.py`（试的时候可把 hub 的 `agent.idle_seconds` 临时改成 0）
+5. 前台试跑：`python notify_agent.py`（试的时候可在管理页面把“离开多久才推送”临时改成“总是推送”）
 6. 设为登录自启（后台运行、崩溃后 1 分钟自动重启）：
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\install-task.ps1

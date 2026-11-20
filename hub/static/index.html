@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>消息推送控制台</title>
+<style>
+:root {
+  --bg: #f5f6f8; --card: #ffffff; --text: #1d2129; --muted: #6b7280; --line: #e5e7eb;
+  --accent: #2563eb; --accent-soft: #e8efff; --ok: #15803d; --ok-soft: #e7f6ec;
+  --warn: #b45309; --warn-soft: #fdf3e2; --err: #b91c1c; --err-soft: #fdecec;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317; --card: #1a1d23; --text: #e6e8eb; --muted: #9aa1ab; --line: #2a2e36;
+    --accent: #6b9bff; --accent-soft: #1f2a44; --ok: #4ade80; --ok-soft: #173023;
+    --warn: #fbbf24; --warn-soft: #3a2e14; --err: #f87171; --err-soft: #3b1a1a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 20px; margin: 0; flex: 1 1 auto; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 2px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+  color: var(--muted); font-size: 12px; white-space: nowrap; }
+.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.chip.bad { color: var(--err); background: var(--err-soft); border-color: transparent; }
+nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+nav button { border: 0; background: none; color: var(--muted); padding: 8px 14px; font-size: 14px;
+  cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+nav button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.card h2 { font-size: 15px; margin: 0 0 4px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0;
+  border-top: 1px solid var(--line); flex-wrap: wrap; }
+.row:first-of-type { border-top: 0; }
+.row .label { flex: 1 1 180px; min-width: 0; }
+.row .label small { display: block; color: var(--muted); font-size: 12px; }
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+select, input[type=text], input[type=password], input[type=number] {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; max-width: 100%; }
+button.btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.btn:disabled { opacity: .5; cursor: default; }
+.switch { position: relative; width: 42px; height: 24px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 24px; transition: .15s; cursor: pointer; }
+.switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px;
+  background: #fff; border-radius: 50%; transition: .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::before { transform: translateX(18px); }
+.big { display: flex; align-items: center; gap: 14px; }
+.big strong { font-size: 16px; }
+.apps .app { display: grid; grid-template-columns: minmax(80px, 1fr) auto; gap: 8px 12px; align-items: center;
+  padding: 10px 0; border-top: 1px solid var(--line); }
+.apps .app:first-child { border-top: 0; }
+.apps .name { font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.apps .controls { justify-content: flex-end; }
+.apps .controls label { color: var(--muted); font-size: 12px; }
+.pair { display: inline-flex; align-items: center; gap: 6px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; border-top: 0; }
+td.time { white-space: nowrap; color: var(--muted); font-size: 12px; }
+td .body { color: var(--muted); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.badge.pushed { color: var(--ok); background: var(--ok-soft); }
+.badge.muted { color: var(--muted); background: var(--bg); }
+.badge.error { color: var(--err); background: var(--err-soft); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.filters input[type=text] { flex: 1 1 160px; }
+.logs { font-family: var(--mono); font-size: 12px; background: var(--bg); border-radius: 8px; padding: 8px;
+  max-height: 65vh; overflow: auto; }
+.log { display: grid; grid-template-columns: auto auto 1fr; gap: 0 8px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+.log .t { color: var(--muted); white-space: nowrap; }
+.log .lv { font-weight: 600; }
+.log .lv.WARNING { color: var(--warn); } .log .lv.ERROR, .log .lv.CRITICAL { color: var(--err); }
+.log .lv.DEBUG { color: var(--muted); }
+.log .m { white-space: pre-wrap; word-break: break-word; }
+.log.dbg .m { color: var(--accent); }
+.more { text-align: center; margin-top: 10px; }
+.empty { color: var(--muted); text-align: center; padding: 24px 0; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+  padding: 8px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 9; }
+.toast.show { opacity: .92; }
+.login { max-width: 420px; margin: 12vh auto; }
+.login input { width: 100%; margin: 8px 0 12px; }
+code { font-family: var(--mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.hidden { display: none !important; }
+@media (max-width: 640px) {
+  .apps .app { grid-template-columns: 1fr; }
+  .apps .controls { justify-content: flex-start; }
+  .hide-sm { display: none; }
+  .log { grid-template-columns: auto 1fr; } .log .h { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div id="login" class="card login hidden">
+  <h2>登录</h2>
+  <p class="hint">输入 hub 令牌（在 N150 上运行 <code>grep ^HUB_TOKEN= /home/zibo/docker/msg-notifier/.env</code> 查看）。令牌只保存在这个浏览器里。</p>
+  <input id="tokenInput" type="password" placeholder="HUB_TOKEN" autocomplete="current-password">
+  <button class="btn primary" id="loginBtn">进入</button>
+  <p class="hint" id="loginErr" style="color:var(--err);margin-top:8px"></p>
+</div>
+
+<div id="main" class="hidden">
+  <header>
+    <h1>消息推送控制台</h1>
+    <div class="chips" id="chips"></div>
+  </header>
+  <nav>
+    <button data-tab="settings" class="on">设置</button>
+    <button data-tab="events">推送记录</button>
+    <button data-tab="logs">日志</button>
+  </nav>
+
+  <section id="tab-settings">
+    <div class="card">
+      <div class="big">
+        <label class="switch"><input type="checkbox" id="enabled"><span></span></label>
+        <div><strong id="enabledText">推送已开启</strong>
+          <div class="hint" style="margin:0">关闭后所有消息只记录、不推送到手机。</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>应用</h2>
+      <p class="hint">每个应用可以单独开关，也可以单独设置声音和提醒类型（“默认”表示跟随下方的默认推送方式）。</p>
+      <div class="apps" id="apps"></div>
+    </div>
+
+    <div class="card">
+      <h2>默认推送方式</h2>
+      <p class="hint">铃声只能在手机上听到：选好后点“发测试推送”试听。</p>
+      <div class="row"><div class="label">提醒类型<small id="levelHint"></small></div>
+        <div class="controls"><select id="level"></select></div></div>
+      <div class="row" id="volumeRow"><div class="label">重要提醒音量<small>仅“重要提醒”类型生效，0–10</small></div>
+        <div class="controls"><input type="range" id="volume" min="0" max="10" step="1"><span id="volumeVal"></span></div></div>
+      <div class="row"><div class="label">铃声</div>
+        <div class="controls"><select id="sound"></select></div></div>
+      <div class="row"><div class="label">持续响铃<small>像来电一样连续响约 30 秒</small></div>
+        <div class="controls"><label class="switch"><input type="checkbox" id="call"><span></span></label></div></div>
+      <div class="row"><div class="label">显示消息内容<small>关闭后只推“谁发来消息”，不带正文</small></div>
+        <div class="controls"><label class="switch"><input type="checkbox" id="showBody"><span></span></label></div></div>
+      <div class="row"><div class="label"></div>
+        <div class="controls"><button class="btn" id="testDefault">发测试推送</button></div></div>
+    </div>
+
+    <div class="card">
+      <h2>工作电脑</h2>
+      <p class="hint">这些参数下发给工作电脑上的程序，约 1 分钟内生效。</p>
+      <div class="row"><div class="label">离开多久才推送<small>键盘鼠标在这段时间内有操作，视为在电脑前，不推送</small></div>
+        <div class="controls"><select id="idle"></select></div></div>
+      <div class="row"><div class="label">调试日志<small>勾选的应用会记录详细事件、弹窗原文和截图，用于排查</small></div>
+        <div class="controls" id="debugApps"></div></div>
+      <div class="row"><div class="label">在线状态</div>
+        <div class="controls" id="hostsList" style="color:var(--muted)"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-events" class="hidden">
+    <div class="card">
+      <div class="filters">
+        <select id="evApp"><option value="">全部应用</option></select>
+        <select id="evStatus">
+          <option value="">全部状态</option><option value="pushed">已推送</option>
+          <option value="muted">已静音</option><option value="error">失败</option>
+        </select>
+        <button class="btn" id="evRefresh">刷新</button>
+      </div>
+      <table>
+        <thead><tr><th>时间</th><th>应用</th><th>内容</th><th class="hide-sm">来源</th><th>状态</th></tr></thead>
+        <tbody id="evBody"></tbody>
+      </table>
+      <div class="more"><button class="btn" id="evMore">加载更多</button></div>
+    </div>
+  </section>
+
+  <section id="tab-logs" class="hidden">
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="lgQ" placeholder="搜索关键字，如 飞书、FLASH、推送失败">
+        <select id="lgLevel">
+          <option value="">全部级别</option>
+          <option value="INFO,WARNING,ERROR,CRITICAL">INFO 及以上</option>
+          <option value="WARNING,ERROR,CRITICAL">WARNING 及以上</option>
+          <option value="ERROR,CRITICAL">仅 ERROR</option>
+        </select>
+        <select id="lgHost"><option value="">全部电脑</option></select>
+        <label class="controls" style="color:var(--muted);font-size:12px">
+          <label class="switch"><input type="checkbox" id="lgAuto" checked><span></span></label>自动刷新</label>
+      </div>
+      <div class="logs" id="lgList"></div>
+      <div class="more"><button class="btn" id="lgMore">加载更早的日志</button></div>
+    </div>
+  </section>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const LEVELS = [
+  ["passive", "静默", "只进 Bark 历史，不弹出、不响"],
+  ["active", "普通", "正常弹出和响铃；专注模式下可能被拦"],
+  ["timeSensitive", "时效性", "专注模式下也会弹出（需在 iPhone 设置里允许 Bark 时效性通知）"],
+  ["critical", "重要提醒", "静音、勿扰时也会响（需在 iPhone 设置里允许 Bark 重要提醒）"],
+];
+const SOUNDS = ["alarm","anticipate","bell","birdsong","bloom","calypso","chime","choo","descent","electronic",
+  "fanfare","glass","gotosleep","healthnotification","horn","ladder","mailsent","minuet","multiwayinvitation",
+  "newmail","newsflash","noir","paymentsuccess","shake","sherwoodforest","silence","spell","suspense",
+  "telegraph","tiptoes","typewriters","update"];
+const IDLE = [[0,"总是推送"],[60,"1 分钟"],[180,"3 分钟"],[300,"5 分钟"],[600,"10 分钟"],[900,"15 分钟"],[1800,"30 分钟"]];
+const STATUS = {pushed: "已推送", muted: "已静音", error: "失败"};
+
+const $ = (id) => document.getElementById(id);
+let token = "";
+try { token = localStorage.getItem("hubToken") || ""; } catch (e) {}
+let settings = null, appNames = [];
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1600);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {"Content-Type": "application/json",
+    "Authorization": "Bearer " + token, ...(opts.headers || {})}});
+  if (r.status === 401) { showLogin("令牌不正确"); throw new Error("401"); }
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+function fmtTime(ts) {
+  const d = new Date(ts * 1000), now = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  const hm = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+function ago(sec) {
+  if (sec < 60) return Math.round(sec) + " 秒前";
+  if (sec < 3600) return Math.round(sec / 60) + " 分钟前";
+  if (sec < 86400) return Math.round(sec / 3600) + " 小时前";
+  return Math.round(sec / 86400) + " 天前";
+}
+function fillSelect(sel, items, withDefault) {
+  sel.innerHTML = "";
+  if (withDefault) sel.append(el("option", {value: "", text: withDefault}));
+  for (const [v, t] of items) sel.append(el("option", {value: v, text: t}));
+}
+
+// ---------------------------------------------------------------- 登录
+function showLogin(err) {
+  $("main").classList.add("hidden"); $("login").classList.remove("hidden");
+  $("loginErr").textContent = err || "";
+}
+$("loginBtn").onclick = async () => {
+  token = $("tokenInput").value.trim();
+  try { await api("/api/status"); } catch (e) { return; }
+  try { localStorage.setItem("hubToken", token); } catch (e) {}
+  start();
+};
+$("tokenInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
+
+// ---------------------------------------------------------------- 设置
+let saveTimer = null;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    // 本地 settings 是唯一数据源（各控件闭包引用的就是它），不要用返回值替换
+    try { await api("/api/settings", {method: "PUT", body: JSON.stringify(settings)}); toast("已保存"); }
+    catch (e) { if (e.message !== "401") toast("保存失败：" + e.message); }
+  }, 250);
+}
+function renderSettings() {
+  const s = settings;
+  $("enabled").checked = s.enabled;
+  $("enabledText").textContent = s.enabled ? "推送已开启" : "推送已暂停";
+  $("level").value = s.bark.level;
+  $("levelHint").textContent = (LEVELS.find((l) => l[0] === s.bark.level) || [])[2] || "";
+  $("volume").value = s.bark.volume ?? 5; $("volumeVal").textContent = $("volume").value;
+  $("volumeRow").classList.toggle("hidden", s.bark.level !== "critical");
+  $("sound").value = s.bark.sound || "";
+  $("call").checked = !!s.bark.call;
+  $("showBody").checked = s.bark.show_body !== false;
+  $("idle").value = String(s.agent.idle_seconds);
+  if (![...$("idle").options].some((o) => o.value === String(s.agent.idle_seconds)))
+    $("idle").append(el("option", {value: s.agent.idle_seconds, text: s.agent.idle_seconds + " 秒"})), $("idle").value = String(s.agent.idle_seconds);
+  renderApps();
+}
+function renderApps() {
+  const box = $("apps"); box.innerHTML = "";
+  const dbg = $("debugApps"); dbg.innerHTML = "";
+  for (const name of appNames) {
+    const cfg = settings.apps[name] || (settings.apps[name] = {enabled: true});
+    const b = cfg.bark || {};
+    const sw = el("input", {type: "checkbox"}); sw.checked = cfg.enabled !== false;
+    sw.onchange = () => { cfg.enabled = sw.checked; save(); };
+    const snd = el("select"); fillSelect(snd, SOUNDS.map((x) => [x, x]), "默认");
+    snd.value = b.sound || "";
+    snd.onchange = () => { cfg.bark = {...(cfg.bark || {}), sound: snd.value}; save(); };
+    const lv = el("select"); fillSelect(lv, LEVELS.map((l) => [l[0], l[1]]), "默认");
+    lv.value = b.level || "";
+    lv.onchange = () => { cfg.bark = {...(cfg.bark || {}), level: lv.value}; save(); };
+    const test = el("button", {class: "btn", text: "测试", onclick: () => testPush(name, test)});
+    box.append(el("div", {class: "app"},
+      el("div", {class: "name"}, el("label", {class: "switch"}, sw, el("span")), el("span", {text: name})),
+      el("div", {class: "controls"}, el("span", {class: "pair"}, el("label", {text: "声音"}), snd),
+        el("span", {class: "pair"}, el("label", {text: "类型"}), lv), test)));
+    const cb = el("input", {type: "checkbox"}); cb.checked = settings.agent.debug_apps.includes(name);
+    cb.onchange = () => {
+      const set = new Set(settings.agent.debug_apps); cb.checked ? set.add(name) : set.delete(name);
+      settings.agent.debug_apps = [...set]; save();
+    };
+    dbg.append(el("label", {style: "display:flex;gap:4px;align-items:center"}, cb, name));
+  }
+}
+async function testPush(app, btn) {
+  btn.disabled = true;
+  try {
+    const r = await api("/api/test", {method: "POST", body: JSON.stringify({app})});
+    toast(r.ok ? "已发送，请看手机" : "发送失败：" + r.detail);
+  } catch (e) { if (e.message !== "401") toast("发送失败：" + e.message); }
+  btn.disabled = false;
+  loadStatus();
+}
+function bindSettings() {
+  fillSelect($("level"), LEVELS.map((l) => [l[0], l[1]]));
+  fillSelect($("sound"), SOUNDS.map((x) => [x, x]), "默认铃声");
+  fillSelect($("idle"), IDLE.map(([v, t]) => [String(v), t]));
+  $("enabled").onchange = () => { settings.enabled = $("enabled").checked; renderSettings(); save(); };
+  $("level").onchange = () => { settings.bark.level = $("level").value; renderSettings(); save(); };
+  $("volume").oninput = () => { $("volumeVal").textContent = $("volume").value; };
+  $("volume").onchange = () => { settings.bark.volume = Number($("volume").value); save(); };
+  $("sound").onchange = () => { settings.bark.sound = $("sound").value; save(); };
+  $("call").onchange = () => { settings.bark.call = $("call").checked; save(); };
+  $("showBody").onchange = () => { settings.bark.show_body = $("showBody").checked; save(); };
+  $("idle").onchange = () => { settings.agent.idle_seconds = Number($("idle").value); save(); };
+  $("testDefault").onclick = () => testPush("", $("testDefault"));
+}
+
+// ---------------------------------------------------------------- 状态
+async function loadStatus() {
+  let st; try { st = await api("/api/status"); } catch (e) { return; }
+  const chips = $("chips"); chips.innerHTML = "";
+  const hosts = st.hosts.filter((h) => h.host !== "hub");
+  const online = hosts.some((h) => st.now - h.last_seen < 180);
+  chips.append(el("span", {class: "chip " + (online ? "ok" : "bad"),
+    text: hosts.length ? (online ? "工作电脑在线" : "工作电脑离线") : "工作电脑未连接过"}));
+  chips.append(el("span", {class: "chip " + (st.bark_keys ? "ok" : "bad"), text: `Bark 设备 ${st.bark_keys}`}));
+  const c = st.last24h || {};
+  chips.append(el("span", {class: "chip", text: `24 小时：推送 ${c.pushed || 0}` + (c.error ? `，失败 ${c.error}` : "")}));
+  const hl = $("hostsList"); hl.innerHTML = "";
+  if (!hosts.length) hl.textContent = "还没有工作电脑连接过";
+  for (const h of hosts) hl.append(el("div", {text: `${h.host}（${h.ip}）：${ago(st.now - h.last_seen)}`}));
+  const sel = $("lgHost"), cur = sel.value;
+  sel.innerHTML = ""; sel.append(el("option", {value: "", text: "全部电脑"}));
+  for (const h of hosts) sel.append(el("option", {value: h.host, text: h.host}));
+  sel.value = cur;
+}
+
+// ---------------------------------------------------------------- 推送记录
+let evLastId = 0;
+async function loadEvents(more) {
+  const q = new URLSearchParams({limit: 50});
+  if ($("evApp").value) q.set("app", $("evApp").value);
+  if ($("evStatus").value) q.set("status", $("evStatus").value);
+  if (more && evLastId) q.set("before_id", evLastId);
+  let rows; try { rows = await api("/api/events?" + q); } catch (e) { return; }
+  const tb = $("evBody"); if (!more) tb.innerHTML = "";
+  for (const r of rows) {
+    evLastId = r.id;
+    const content = el("td", {}, el("div", {text: r.title || (r.generic ? "有新消息" : "")}),
+      r.body ? el("div", {class: "body", text: r.body.length > 300 ? r.body.slice(0, 300) + "…" : r.body}) : null,
+      r.detail ? el("div", {class: "body", style: "color:var(--err)", text: r.detail}) : null);
+    tb.append(el("tr", {}, el("td", {class: "time", text: fmtTime(r.ts)}), el("td", {text: r.app}), content,
+      el("td", {class: "time hide-sm", text: r.source + (r.generic ? "（兜底）" : "")}),
+      el("td", {}, el("span", {class: "badge " + r.status, text: STATUS[r.status] || r.status}))));
+  }
+  if (!more && !rows.length) tb.append(el("tr", {}, el("td", {colspan: 5, class: "empty", text: "暂无记录"})));
+  $("evMore").classList.toggle("hidden", rows.length < 50);
+}
+$("evRefresh").onclick = () => loadEvents(false);
+$("evApp").onchange = $("evStatus").onchange = () => loadEvents(false);
+$("evMore").onclick = () => loadEvents(true);
+
+// ---------------------------------------------------------------- 日志
+let lgFirstId = 0, lgLastId = 0;
+function logRow(r) {
+  const dbg = r.msg.includes("[DEBUG-");
+  return el("div", {class: "log" + (dbg ? " dbg" : "")},
+    el("span", {class: "t", text: fmtTime(r.ts)}),
+    el("span", {class: "h t", text: r.host}),
+    el("span", {class: "m"}, el("span", {class: "lv " + r.level, text: r.level === "INFO" ? "" : r.level + " "}), r.msg));
+}
+function logQuery(extra) {
+  const q = new URLSearchParams({limit: 200, ...extra});
+  if ($("lgQ").value.trim()) q.set("q", $("lgQ").value.trim());
+  if ($("lgLevel").value) q.set("level", $("lgLevel").value);
+  if ($("lgHost").value) q.set("host", $("lgHost").value);
+  return q;
+}
+async function loadLogs(mode) {   // mode: "reset" | "more" | "new"
+  const list = $("lgList");
+  let rows;
+  try { rows = await api("/api/logs?" + logQuery(mode === "more" && lgLastId ? {before_id: lgLastId} : {})); }
+  catch (e) { return; }
+  if (mode === "reset") {
+    list.innerHTML = ""; lgFirstId = rows.length ? rows[0].id : 0;
+    for (const r of rows.slice().reverse()) list.append(logRow(r));
+    lgLastId = rows.length ? rows[rows.length - 1].id : 0;
+    if (!rows.length) list.append(el("div", {class: "empty", text: "暂无日志"}));
+    list.scrollTop = list.scrollHeight;
+  } else if (mode === "more") {
+    const h = list.scrollHeight;
+    for (const r of rows) list.prepend(logRow(r));
+    if (rows.length) lgLastId = rows[rows.length - 1].id;
+    list.scrollTop = list.scrollHeight - h;
+  } else {
+    const fresh = rows.filter((r) => r.id > lgFirstId).reverse();
+    if (!fresh.length) return;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    list.querySelector(".empty")?.remove();
+    for (const r of fresh) list.append(logRow(r));
+    lgFirstId = fresh[fresh.length - 1].id;
+    if (atBottom) list.scrollTop = list.scrollHeight;
+  }
+  if (mode !== "new") $("lgMore").classList.toggle("hidden", rows.length < 200);
+}
+let lgTimer = null;
+$("lgQ").oninput = () => { clearTimeout(lgTimer); lgTimer = setTimeout(() => loadLogs("reset"), 300); };
+$("lgLevel").onchange = $("lgHost").onchange = () => loadLogs("reset");
+$("lgMore").onclick = () => loadLogs("more");
+
+// ---------------------------------------------------------------- 标签页
+let tab = "settings";
+try { tab = localStorage.getItem("hubTab") || "settings"; } catch (e) {}
+function showTab(t) {
+  tab = t;
+  try { localStorage.setItem("hubTab", t); } catch (e) {}
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  for (const s of ["settings", "events", "logs"]) $("tab-" + s).classList.toggle("hidden", s !== t);
+  if (t === "events") loadEvents(false);
+  if (t === "logs") loadLogs("reset");
+}
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+// ---------------------------------------------------------------- 启动
+async function start() {
+  try {
+    [settings, appNames] = await Promise.all([api("/api/settings"), api("/api/apps")]);
+  } catch (e) { if (e.message !== "401") showLogin("连接失败：" + e.message); return; }
+  $("login").classList.add("hidden"); $("main").classList.remove("hidden");
+  renderSettings();
+  const ev = $("evApp"); ev.innerHTML = ""; ev.append(el("option", {value: "", text: "全部应用"}));
+  for (const n of [...appNames, "test"]) ev.append(el("option", {value: n, text: n === "test" ? "测试" : n}));
+  await loadStatus();
+  showTab(tab);
+}
+bindSettings();
+setInterval(loadStatus, 15000);
+setInterval(() => { if (tab === "logs" && $("lgAuto").checked && !document.hidden) loadLogs("new"); }, 3000);
+if (token) start(); else showLogin();
+</script>
+</body>
+</html>

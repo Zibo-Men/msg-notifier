@@ -26,6 +26,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -312,7 +313,7 @@ def hub_config_loop(cfg: dict) -> None:
     """定期从 hub 拉取运行参数，原地更新 cfg（各模块读的是同一个 dict）。"""
     while True:
         try:
-            remote = hub_request(cfg, "GET", "/api/agent-config") or {}
+            remote = hub_request(cfg, "GET", "/api/agent-config?host=" + urllib.parse.quote(cfg["host_name"])) or {}
             changed = {k: v for k, v in remote.items() if cfg.get(k) != v}
             if changed:
                 cfg.update(changed)
@@ -464,7 +465,7 @@ def run(cfg: dict, db: NotificationDB) -> None:
     notifier = Notifier(cfg)
     if cfg["hub_url"]:
         try:
-            cfg.update(hub_request(cfg, "GET", "/api/agent-config") or {})
+            cfg.update(hub_request(cfg, "GET", "/api/agent-config?host=" + urllib.parse.quote(cfg["host_name"])) or {})
         except Exception as e:  # noqa: BLE001
             log.warning("启动时连不上 hub（%s），先用本地参数", e)
         threading.Thread(target=hub_config_loop, args=(cfg,), daemon=True).start()

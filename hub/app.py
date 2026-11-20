@@ -1,13 +1,17 @@
 """msg-notifier hub：运行在 N150 上，接收工作电脑的通知和日志，统一推送到 Bark。
 
-接口（除 /healthz 外都需要 Authorization: Bearer <HUB_TOKEN>）：
+页面：GET /  管理页面（设置、推送记录、日志）
+
+接口（除 / 和 /healthz 外都需要 Authorization: Bearer <HUB_TOKEN>）：
   POST /api/notify        工作电脑提交一条要推送的消息
   POST /api/logs          工作电脑批量上传日志
-  GET  /api/agent-config  工作电脑定期拉取的运行参数（idle_seconds、debug_apps 等）
-  GET  /api/settings      读取全部设置；PUT 覆盖保存（给以后的管理页面用）
-  POST /api/test          发一条测试推送
-  GET  /api/events        最近的推送记录
-  GET  /api/logs          最近的日志（?q= 关键字，?host=）
+  GET  /api/agent-config  工作电脑定期拉取的运行参数（?host= 顺便登记在线状态）
+  GET  /api/settings      读取全部设置；PUT 覆盖保存
+  GET  /api/status        Bark 设备数、各工作电脑最近上报时间、今日推送统计
+  GET  /api/apps          已知应用列表（设置里的 + 推送记录里出现过的）
+  POST /api/test          发一条测试推送（可选 {"app": "Teams"} 用该应用的声音/类型）
+  GET  /api/events        推送记录（?limit= ?before_id= ?app= ?status=）
+  GET  /api/logs          日志（?limit= ?before_id= ?q= ?host= ?level=）
 """
 from __future__ import annotations
 
@@ -22,12 +26,14 @@ from contextlib import closing
 from pathlib import Path
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 DATA = Path(os.getenv("DATA_DIR", "/data"))
 DB_PATH = DATA / "hub.db"
 SETTINGS_PATH = DATA / "settings.json"
+STATIC = Path(__file__).resolve().parent / "static"
 HUB_TOKEN = os.getenv("HUB_TOKEN", "")
 BARK_SERVER = os.getenv("BARK_SERVER", "https://api.day.app").rstrip("/")
 BARK_KEYS = [k.strip() for k in os.getenv("BARK_KEY", "").split(",") if k.strip()]
@@ -35,19 +41,21 @@ LOG_KEEP_DAYS = int(os.getenv("LOG_KEEP_DAYS", "30"))
 EVENT_KEEP_DAYS = int(os.getenv("EVENT_KEEP_DAYS", "180"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger("hub")
 
 DEFAULT_SETTINGS = {
     "enabled": True,                      # 总开关
-    "apps": {                             # 每个应用的开关；未列出的应用默认开启
+    "apps": {                             # 每个应用：enabled + 可选 bark 覆盖；未列出的应用默认开启
         "Teams": {"enabled": True},
         "飞书": {"enabled": True},
         "Outlook": {"enabled": True},
     },
     "bark": {
-        "level": "timeSensitive",         # active / timeSensitive / critical / passive
+        "level": "timeSensitive",         # passive / active / timeSensitive / critical
         "call": False,                    # 持续响铃约 30 秒
         "sound": "",                      # Bark 内置铃声名，留空默认
+        "volume": 5,                      # critical 时的音量 0-10
         "show_body": True,                # False = 只推“谁发来消息”
     },
     "agent": {                            # 下发给工作电脑的参数，覆盖它本地 config.json
@@ -104,6 +112,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS logs(
               id INTEGER PRIMARY KEY, ts REAL, host TEXT, level TEXT, msg TEXT);
             CREATE INDEX IF NOT EXISTS logs_ts ON logs(ts);
+            CREATE TABLE IF NOT EXISTS hosts(host TEXT PRIMARY KEY, last_seen REAL, ip TEXT);
             """
         )
         prune(con)
@@ -118,6 +127,16 @@ def prune(con: sqlite3.Connection) -> None:
     con.commit()
 
 
+def _prune_loop() -> None:
+    while True:
+        time.sleep(6 * 3600)
+        try:
+            with _db_lock, closing(db()) as con:
+                prune(con)
+        except Exception as e:  # noqa: BLE001
+            log.warning("清理旧数据失败: %s", e)
+
+
 def record_event(host, app_, title, body, source, generic, status, detail="") -> None:
     with _db_lock, closing(db()) as con:
         con.execute(
@@ -127,7 +146,26 @@ def record_event(host, app_, title, body, source, generic, status, detail="") ->
         con.commit()
 
 
+def touch_host(host: str, request: Request) -> None:
+    if not host:
+        return
+    ip = request.client.host if request.client else ""
+    with _db_lock, closing(db()) as con:
+        con.execute(
+            "INSERT INTO hosts(host,last_seen,ip) VALUES(?,?,?) "
+            "ON CONFLICT(host) DO UPDATE SET last_seen=excluded.last_seen, ip=excluded.ip",
+            (host, time.time(), ip),
+        )
+        con.commit()
+
+
 # ---------------------------------------------------------------- Bark
+def effective_bark(s: dict, app_name: str) -> dict:
+    """全局 bark 设置 + 该应用的覆盖（只覆盖填了值的项）。"""
+    over = s["apps"].get(app_name, {}).get("bark", {}) or {}
+    return deep_merge(s["bark"], {k: v for k, v in over.items() if v not in ("", None)})
+
+
 def bark_push(title: str, body: str, group: str, bark: dict) -> tuple[bool, str]:
     if not BARK_KEYS:
         return False, "BARK_KEY 未配置"
@@ -140,17 +178,19 @@ def bark_push(title: str, body: str, group: str, bark: dict) -> tuple[bool, str]
         if bark.get("sound"):
             data["sound"] = bark["sound"]
         if data["level"] == "critical":
-            data["volume"] = "5"
+            data["volume"] = str(bark.get("volume", 5))
+        err = ""
         for attempt in range(3):
             try:
                 r = httpx.post(f"{BARK_SERVER}/push", json=data, timeout=10)
                 if r.status_code == 200:
+                    err = ""
                     break
                 err = f"HTTP {r.status_code}: {r.text[:200]}"
             except Exception as e:  # noqa: BLE001
                 err = str(e)
             time.sleep(1 + attempt)
-        else:
+        if err:
             errors.append(err)
     return (not errors), "; ".join(errors)
 
@@ -186,10 +226,20 @@ class LogBatch(BaseModel):
     lines: list[LogLine]
 
 
+class TestReq(BaseModel):
+    app: str = ""
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    threading.Thread(target=_prune_loop, daemon=True).start()
     log.info("hub 启动：Bark 设备 %d 个，服务器 %s", len(BARK_KEYS), BARK_SERVER)
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/healthz")
@@ -198,7 +248,8 @@ def healthz() -> dict:
 
 
 @app.post("/api/notify", dependencies=[Depends(auth)])
-def notify(n: Notify) -> dict:
+def notify(n: Notify, request: Request) -> dict:
+    touch_host(n.host, request)
     s = load_settings()
     app_cfg = s["apps"].get(n.app, {"enabled": True})
     if not s["enabled"]:
@@ -206,7 +257,7 @@ def notify(n: Notify) -> dict:
     elif not app_cfg.get("enabled", True):
         status, detail = "muted", f"{n.app} 已关闭"
     else:
-        bark = deep_merge(s["bark"], app_cfg.get("bark", {}))  # 允许按应用覆盖铃声/级别
+        bark = effective_bark(s, n.app)
         title = f"{n.app}: {n.title}" if n.title else n.app
         body = n.body if (bark.get("show_body", True) or n.generic) else "有新消息"
         ok, err = bark_push(title, body or "有新消息", n.app, bark)
@@ -217,7 +268,8 @@ def notify(n: Notify) -> dict:
 
 
 @app.post("/api/logs", dependencies=[Depends(auth)])
-def post_logs(b: LogBatch) -> dict:
+def post_logs(b: LogBatch, request: Request) -> dict:
+    touch_host(b.host, request)
     with _db_lock, closing(db()) as con:
         con.executemany(
             "INSERT INTO logs(ts,host,level,msg) VALUES(?,?,?,?)",
@@ -228,7 +280,8 @@ def post_logs(b: LogBatch) -> dict:
 
 
 @app.get("/api/agent-config", dependencies=[Depends(auth)])
-def agent_config() -> dict:
+def agent_config(request: Request, host: str = "") -> dict:
+    touch_host(host, request)
     return load_settings()["agent"]
 
 
@@ -240,36 +293,81 @@ def get_settings() -> dict:
 @app.put("/api/settings", dependencies=[Depends(auth)])
 def put_settings(s: dict) -> dict:
     merged = deep_merge(DEFAULT_SETTINGS, s)
+    # 用页面提交的 apps 原样替换（这样可以删除某个应用的覆盖项）
+    if isinstance(s.get("apps"), dict):
+        merged["apps"] = s["apps"]
     save_settings(merged)
+    log.info("设置已更新")
     return merged
 
 
+@app.get("/api/status", dependencies=[Depends(auth)])
+def status() -> dict:
+    day_start = time.time() - 86400
+    with closing(db()) as con:
+        hosts = [dict(r) for r in con.execute("SELECT * FROM hosts ORDER BY last_seen DESC")]
+        counts = {r["status"]: r["n"] for r in con.execute(
+            "SELECT status, COUNT(*) n FROM events WHERE ts >= ? GROUP BY status", (day_start,))}
+        last = con.execute("SELECT ts FROM events ORDER BY id DESC LIMIT 1").fetchone()
+    return {"bark_keys": len(BARK_KEYS), "bark_server": BARK_SERVER, "hosts": hosts, "now": time.time(),
+            "last24h": counts, "last_event_ts": last["ts"] if last else None}
+
+
+@app.get("/api/apps", dependencies=[Depends(auth)])
+def apps() -> list[str]:
+    names = list(load_settings()["apps"].keys())
+    with closing(db()) as con:
+        for r in con.execute("SELECT DISTINCT app FROM events WHERE app NOT IN ('test','测试')"):
+            if r["app"] and r["app"] not in names:
+                names.append(r["app"])
+    return names
+
+
 @app.post("/api/test", dependencies=[Depends(auth)])
-def test_push() -> dict:
-    ok, err = bark_push("msg-notifier 测试", "看到这条说明 N150 → Bark → iPhone 链路正常", "test",
-                        load_settings()["bark"])
-    record_event("hub", "test", "测试", "", "api-test", False, "pushed" if ok else "error", err)
+def test_push(t: TestReq | None = None) -> dict:
+    s = load_settings()
+    name = (t.app if t else "") or ""
+    bark = effective_bark(s, name) if name else s["bark"]
+    title = f"{name}: 测试推送" if name else "msg-notifier 测试"
+    ok, err = bark_push(title, "这是从管理页面发出的测试，用于试听声音和提醒类型", name or "test", bark)
+    record_event("hub", "test", title, "", "page-test", False, "pushed" if ok else "error", err)
     return {"ok": ok, "detail": err}
 
 
 @app.get("/api/events", dependencies=[Depends(auth)])
-def events(limit: int = 50) -> list[dict]:
+def events(limit: int = 50, before_id: int = 0, app: str = "", status: str = "") -> list[dict]:
+    sql, args = "SELECT * FROM events WHERE 1=1", []
+    if before_id:
+        sql += " AND id < ?"
+        args.append(before_id)
+    if app:
+        sql += " AND app = ?"
+        args.append(app)
+    if status:
+        sql += " AND status = ?"
+        args.append(status)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(min(limit, 1000))
     with closing(db()) as con:
-        rows = con.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (min(limit, 1000),)).fetchall()
-    return [dict(r) for r in rows]
+        return [dict(r) for r in con.execute(sql, args).fetchall()]
 
 
 @app.get("/api/logs", dependencies=[Depends(auth)])
-def get_logs(limit: int = 200, q: str = "", host: str = "") -> list[dict]:
+def get_logs(limit: int = 200, before_id: int = 0, q: str = "", host: str = "", level: str = "") -> list[dict]:
     sql, args = "SELECT * FROM logs WHERE 1=1", []
+    if before_id:
+        sql += " AND id < ?"
+        args.append(before_id)
     if q:
         sql += " AND msg LIKE ?"
         args.append(f"%{q}%")
     if host:
         sql += " AND host = ?"
         args.append(host)
+    if level:
+        sql += " AND level IN (" + ",".join("?" * len(level.split(","))) + ")"
+        args.extend(level.split(","))
     sql += " ORDER BY id DESC LIMIT ?"
     args.append(min(limit, 5000))
     with closing(db()) as con:
-        rows = con.execute(sql, args).fetchall()
-    return [dict(r) for r in rows]
+        return [dict(r) for r in con.execute(sql, args).fetchall()]
