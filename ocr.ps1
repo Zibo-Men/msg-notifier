@@ -47,6 +47,11 @@ $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.S
 $tags = if ($Lang) { @($Lang) } else { $langs | ForEach-Object { $_.LanguageTag } }
 foreach ($tag in $tags) {
     $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new($tag))
+    if ($null -eq $engine -and $Lang) {
+        # requested language not installed: fall back to the user profile languages
+        $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+        $tag = "$tag (not installed, using profile language)"
+    }
     if ($null -eq $engine) { Write-Output "## $tag (not installed)"; continue }
     $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
     Write-Output "## $tag"
