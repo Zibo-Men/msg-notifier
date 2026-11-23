@@ -70,7 +70,15 @@ DEFAULT_CONFIG = {
          # Teams 靠弹窗内容 + 任务栏闪烁；托盘图标/提示会随“离开”状态、读完消息而变，只记日志不推送
          "tray_signals": False},
         {"name": "飞书", "processes": ["lark.exe", "feishu.exe"], "tray_keywords": ["ChintOA", "飞书", "Feishu", "Lark"],
-         "parser": "generic", "popup_min": [150, 50], "popup_max": [800, 600]},
+         "parser": "generic", "popup_min": [150, 50], "popup_max": [800, 600],
+         # 实测（2026-11）：真消息弹窗在右下角，UIA 两段“群名/发送人 | 发送人: 内容”，同时任务栏闪烁。
+         # 误报来源：选中文字时的划词工具栏（AI Search/Translate/Explain/Copy）、它一闪即逝触发的
+         # “弹窗已关闭”兜底、托盘图标随状态频繁变化。所以：要求伴随闪烁、忽略工具栏、关掉这两种兜底。
+         "popup_needs_flash": True,
+         "popup_fallback": False,
+         "ignore_popup_words": ["AI Search", "Translate", "Explain", "Copy",
+                                "AI 搜索", "翻译", "解释", "复制"],
+         "tray_signals": False},
     ],
     "debug_apps": ["飞书"],          # 记录详细事件、UIA/OCR 原文和弹窗截图（debug_shots/）
     "ocr_fallback": True,

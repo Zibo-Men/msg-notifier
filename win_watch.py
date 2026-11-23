@@ -24,7 +24,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from text_parse import clean_lines, clean_ocr, parse_teams_items, unread_in_title
+from text_parse import clean_lines, clean_ocr, is_ignored_popup, parse_teams_items, unread_in_title
 
 log = logging.getLogger("notify_agent")
 
@@ -179,6 +179,8 @@ class WindowWatcher:
         for a in self.apps:
             a["_procs"] = [p.lower() for p in a.get("processes", [])]
         self.tasks: list[tuple[float, object]] = []
+        self._tasks_lock = threading.Lock()         # OCR 线程也会 schedule
+        self.flash_at: dict[str, float] = {}        # 应用名 -> 最近一次任务栏闪烁时间
         self.titles: dict[int, int] = {}            # hwnd -> 标题里的未读数
         self.tray_names: dict[str, str] = {}        # tray key -> 最近名称
         self.tray_base: dict[str, str] = {}         # tray key -> 初始名称
@@ -206,13 +208,16 @@ class WindowWatcher:
             log.info("[DEBUG-%s] %s", app["name"], msg)
 
     def schedule(self, delay: float, fn) -> None:
-        self.tasks.append((time.time() + delay, fn))
+        with self._tasks_lock:
+            self.tasks.append((time.time() + delay, fn))
 
     def run_due(self) -> None:
         now = time.time()
-        due = [t for t in self.tasks if t[0] <= now]
+        with self._tasks_lock:
+            due = [t for t in self.tasks if t[0] <= now]
+            for t in due:
+                self.tasks.remove(t)
         for t in due:
-            self.tasks.remove(t)
             try:
                 t[1]()
             except Exception as e:  # noqa: BLE001
@@ -232,6 +237,7 @@ class WindowWatcher:
             log.debug("FLASH 其他程序: %s", describe(hwnd))
             return
         log.info("FLASH [%s] %s", app["name"], describe(hwnd))
+        self.flash_at[app["name"]] = time.time()
         self.generic(app, "flash")
 
     def on_win_event(self, event: int, hwnd) -> None:
@@ -248,8 +254,8 @@ class WindowWatcher:
             self.dbg(app, f"SHOW {'弹窗' if is_popup else '非弹窗'} {describe(hwnd)}")
             if is_popup:
                 self.popup_seq += 1
-                seq = self.popup_seq
-                self.schedule(0.5, lambda: self.read_popup(app, hwnd, seq, attempt=1))
+                seq, shown = self.popup_seq, time.time()
+                self.schedule(0.5, lambda: self.read_popup(app, hwnd, seq, shown, attempt=1))
         elif event == EVENT_OBJECT_NAMECHANGE:
             title = win_text(hwnd)
             n = unread_in_title(title)
@@ -262,11 +268,45 @@ class WindowWatcher:
                 self.generic(app, "title")
 
     # ---- 弹窗内容
-    def read_popup(self, app: dict, hwnd, seq: int, attempt: int) -> None:
+    def popup_fallback(self, app: dict, reason: str) -> None:
+        """弹窗读不到时的“有新消息”兜底。飞书等关掉了它：划词工具栏等界面一闪就没，
+        会被误当成新消息；真正的新消息必然伴随任务栏闪烁，闪烁本身已有兜底。"""
+        if app.get("popup_fallback", True):
+            self.generic(app, reason)
+        else:
+            self.dbg(app, f"弹窗兜底已关闭，不推 ({reason})")
+
+    def ignored(self, app: dict, texts: list[str], seq: int, how: str) -> bool:
+        words = app.get("ignore_popup_words") or []
+        if words and is_ignored_popup(texts, words):
+            log.info("弹窗 #%d [%s] 是划词工具栏等界面，忽略（%s）: %s",
+                     seq, app["name"], how, " | ".join(texts)[:100])
+            return True
+        return False
+
+    def submit_popup(self, app: dict, title: str, body: str, source: str, seq: int, shown: float,
+                     waited: bool = False) -> None:
+        """提交弹窗内容。popup_needs_flash 的应用：弹窗前后 3 秒内必须有任务栏闪烁，
+        否则不是新消息通知（菜单、名片、工具栏之类）。闪烁可能稍晚，最多等到弹窗后 4 秒。"""
+        if app.get("popup_needs_flash"):
+            flashed = self.flash_at.get(app["name"], 0) >= shown - 3
+            if not flashed:
+                wait = shown + 4 - time.time()
+                if not waited and wait > 0:
+                    self.dbg(app, f"弹窗 #{seq} 还没看到任务栏闪烁，{wait:.1f}s 后再判断")
+                    self.schedule(wait, lambda: self.submit_popup(app, title, body, source, seq, shown, waited=True))
+                    return
+                log.info("弹窗 #%d [%s] 没有伴随任务栏闪烁，不是新消息，忽略: %s | %s",
+                         seq, app["name"], title, (body or "")[:60])
+                return
+        self.notifier.submit(app["name"], title, body or "", source=source)
+
+    def read_popup(self, app: dict, hwnd, seq: int, shown: float, attempt: int) -> bool:
+        """返回 True 表示已处理（提交、忽略或等待闪烁），不用再重试/OCR。"""
         if not user32.IsWindow(hwnd):
             log.info("弹窗 #%d [%s] 已关闭，无法读取", seq, app["name"])
-            self.generic(app, "popup-gone")
-            return
+            self.popup_fallback(app, "popup-gone")
+            return True
         debug = app["name"] in self.debug_apps
         shot = None
         if attempt == 1 and (debug or auto is None):
@@ -275,13 +315,15 @@ class WindowWatcher:
         if auto is not None:
             try:
                 items = uia_items(hwnd)
+                if debug:
+                    self.dbg(app, f"UIA #{seq} 第{attempt}次 {len(items)} 段: "
+                             + " | ".join(f"{t}@{d}:{n[:80]}" for t, n, d in items))
+                if self.ignored(app, [n for _, n, _ in items], seq, "UIA"):
+                    return True
                 if app.get("parser") == "teams":
                     parsed = parse_teams_items(items)
                     if parsed:
                         title, body = parsed
-                if debug:
-                    self.dbg(app, f"UIA #{seq} 第{attempt}次 {len(items)} 段: "
-                             + " | ".join(f"{t}@{d}:{n[:80]}" for t, n, d in items))
                 if title is None:
                     lines = clean_lines([(t, n) for t, n, _ in items], {app["name"], win_text(hwnd)})
                     if lines:
@@ -290,26 +332,24 @@ class WindowWatcher:
                 log.warning("UIA 读取弹窗 #%d 失败: %s", seq, e)
         if title:
             log.info("弹窗 #%d [%s] UIA 读到: %s | %s", seq, app["name"], title, (body or "")[:80])
-            self.notifier.submit(app["name"], title, body or "", source="popup-uia")
+            self.submit_popup(app, title, body or "", "popup-uia", seq, shown)
             if debug and shot:
-                self.ocr_async(app, shot, seq, push=False)  # 调试：也看看 OCR 的结果
-            return
+                self.ocr_async(app, shot, seq, shown, push=False)  # 调试：也看看 OCR 的结果
+            return True
         if attempt == 1:
             # 第一次读不到：先截图（窗口可能很快消失），1 秒后再读一次
             shot = shot or self.screenshot(hwnd, seq, app, keep=debug)
-            self.schedule(1.0, lambda: self.read_popup_retry(app, hwnd, seq, shot))
-            return
+            self.schedule(1.0, lambda: self.read_popup_retry(app, hwnd, seq, shown, shot))
+        return False
 
-    def read_popup_retry(self, app: dict, hwnd, seq: int, shot: Path | None) -> None:
+    def read_popup_retry(self, app: dict, hwnd, seq: int, shown: float, shot: Path | None) -> None:
         if user32.IsWindow(hwnd) and auto is not None:
-            before = self.notifier.last_content_at(app["name"])
-            self.read_popup(app, hwnd, seq, attempt=2)
-            if self.notifier.last_content_at(app["name"]) != before:
+            if self.read_popup(app, hwnd, seq, shown, attempt=2):
                 return
         if shot and self.cfg.get("ocr_fallback", True):
-            self.ocr_async(app, shot, seq, push=True)
+            self.ocr_async(app, shot, seq, shown, push=True)
         else:
-            self.generic(app, "popup-unreadable")
+            self.popup_fallback(app, "popup-unreadable")
 
     def screenshot(self, hwnd, seq: int, app: dict, keep: bool) -> Path | None:
         if ImageGrab is None or not user32.IsWindowVisible(hwnd):
@@ -337,18 +377,20 @@ class WindowWatcher:
         for f in files[: max(0, len(files) - DEBUG_MAX_FILES)]:
             f.unlink(missing_ok=True)
 
-    def ocr_async(self, app: dict, path: Path, seq: int, push: bool) -> None:
+    def ocr_async(self, app: dict, path: Path, seq: int, shown: float, push: bool) -> None:
         def work() -> None:
             text = run_ocr(path, self.cfg.get("ocr_lang", "zh-Hans-CN"))
             self.dbg(app, f"OCR #{seq}: " + text.replace("\n", " | "))
             if not push:
                 return
             lines = clean_ocr(text, {app["name"], "Microsoft Teams"})
+            if lines and self.ignored(app, lines, seq, "OCR"):
+                return
             if lines:
                 log.info("弹窗 #%d [%s] OCR 读到: %s", seq, app["name"], " | ".join(lines)[:120])
-                self.notifier.submit(app["name"], lines[0], "\n".join(lines[1:]), source="popup-ocr")
+                self.submit_popup(app, lines[0], "\n".join(lines[1:]), "popup-ocr", seq, shown)
             else:
-                self.notifier.submit(app["name"], "", "有新消息", source="popup-ocr-empty", generic=True)
+                self.popup_fallback(app, "popup-ocr-empty")
 
         threading.Thread(target=work, daemon=True).start()
 

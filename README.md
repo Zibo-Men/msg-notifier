@@ -20,10 +20,16 @@ notify_agent.py ── HTTP 局域网 ──►  msg-notifier-hub :8101  ── 
 |---|---|---|
 | 新版 Outlook | Windows 通知数据库 `wpndatabase.db` 里的 toast | 发件人、主题、预览 |
 | Teams | 自绘弹窗出现时用 UI Automation 读取 | 发送人、消息 |
-| 飞书（ChintOA / Lark.exe） | 同上，按通用规则解析；读不到就截图 OCR | **待实测**，目前是推测 |
-| 兜底 | 任务栏闪烁、标题未读数上升、托盘提示文字/图标变化 | 只知道“有新消息” |
+| 飞书（ChintOA / Lark.exe） | 右下角弹窗出现时用 UI Automation 读取，且必须同时有任务栏闪烁 | 群名/发送人、消息 |
+| 兜底 | 任务栏闪烁、标题未读数上升（Teams、飞书不用托盘信号） | 只知道“有新消息” |
 
 兜底信号会延迟 5 秒，若这期间同一应用已推过具体内容就不再推。
+
+飞书的防误报规则（2026-11 按实际日志调整，配置在 `notify_agent.py` 的 `window_apps`）：
+- 选中文字时弹出的划词工具栏（AI Search / Translate / Explain / Copy）直接忽略（`ignore_popup_words`）。
+- 弹窗前后 3 秒内没有任务栏闪烁的弹窗（菜单、名片等）不算新消息（`popup_needs_flash`）。
+- 弹窗一闪就消失、读不到内容时不推“有新消息”（`popup_fallback: false`），真消息靠任务栏闪烁兜底。
+- 托盘图标会随状态频繁变化，不作为信号（`tray_signals: false`）。
 
 注意：新版 Outlook 关闭窗口后会彻底退出，就收不到邮件了。请在 Outlook 设置里打开“在后台运行”，或只最小化不关闭。
 

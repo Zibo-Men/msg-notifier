@@ -64,3 +64,21 @@ def parse_teams_items(items: list[tuple[str, str, int]]) -> tuple[str, str] | No
     if len(layer) < 2:
         return None
     return layer[0], "\n".join(layer[1:])
+
+
+def is_ignored_popup(texts: list[str], words: list[str], min_hits: int = 2) -> bool:
+    """弹窗是否是应忽略的界面（如飞书划词工具栏 “AI Search / Translate / Explain / Copy”）。
+
+    texts：UIA 读到的各段文字（整段比较），或 OCR 的各行（子串比较，OCR 常把 l 认成 I，所以先统一）。
+    命中 words 中至少 min_hits 个不同的词就算。
+    """
+    norm = lambda s: s.lower().replace("i", "l").replace(" ", "")  # noqa: E731
+    wanted = {norm(w) for w in words if w}
+    if not wanted:
+        return False
+    items = [norm(t) for t in texts if t and t.strip()]
+    exact = {t for t in items if t in wanted}
+    if len(exact) >= min_hits:
+        return True
+    joined = " ".join(items)
+    return sum(1 for w in wanted if w in joined) >= max(min_hits, 3)
